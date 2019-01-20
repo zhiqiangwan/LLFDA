@@ -1264,29 +1264,33 @@ class DataGenerator:
                 if transformations:
 
                     inverse_transforms = []
+                    # Combine the original image and the foggy image at the last channel.
+                    num_color_channels = batch_X[i].shape[-1]
+                    combined_images = np.concatenate((batch_X[i], batch_X_foggy[i]), axis=2)
 
                     for transform in transformations:
                         if not (self.labels is None):
                             if ('inverse_transform' in returns) and ('return_inverter' in inspect.signature(transform).parameters):
-                                batch_X[i], batch_y[i], inverse_transform = transform(batch_X[i], batch_y[i], return_inverter=True)
-                                batch_X_foggy[i] = transform(batch_X_foggy[i], None)
+                                combined_images, batch_y[i], inverse_transform = transform(combined_images, batch_y[i], return_inverter=True)
                                 inverse_transforms.append(inverse_transform)
                             else:
-                                batch_X[i], batch_y[i] = transform(batch_X[i], batch_y[i])
-                                batch_X_foggy[i] = transform(batch_X_foggy[i], None)
+                                combined_images, batch_y[i] = transform(combined_images, batch_y[i])
 
                             if batch_X[i] is None: # In case the transform failed to produce an output image, which is possible for some random transforms.
                                 batch_items_to_remove.append(i)
                                 batch_inverse_transforms.append([])
                                 continue
+
                         else:
                             if ('inverse_transform' in returns) and ('return_inverter' in inspect.signature(transform).parameters):
-                                batch_X[i], inverse_transform = transform(batch_X[i], None, return_inverter=True)
-                                batch_X_foggy[i] = transform(batch_X_foggy[i], None)
+                                combined_images, inverse_transform = transform(combined_images, return_inverter=True)
                                 inverse_transforms.append(inverse_transform)
                             else:
-                                batch_X[i] = transform(batch_X[i], None)
-                                batch_X_foggy[i] = transform(batch_X_foggy[i], None)
+                                combined_images = transform(combined_images)
+
+                    # Split the original image and the foggy image.
+                    batch_X[i] = combined_images[:, :, :num_color_channels]
+                    batch_X_foggy[i] = combined_images[:, :, num_color_channels:]
 
                     batch_inverse_transforms.append(inverse_transforms[::-1])
 

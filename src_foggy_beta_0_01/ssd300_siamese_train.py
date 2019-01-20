@@ -286,8 +286,7 @@ else:
 
 # For the training generator:
 ssd_data_augmentation = SSDDataAugmentation_Siamese(img_height=img_height,
-                                                    img_width=img_width,
-                                                    background=mean_color)
+                                                    img_width=img_width)
 
 # For the validation generator:
 convert_to_3_channels = ConvertTo3Channels()

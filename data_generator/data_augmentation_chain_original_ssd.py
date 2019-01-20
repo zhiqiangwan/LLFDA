@@ -290,7 +290,7 @@ class SSDDataAugmentation_Siamese:
     def __init__(self,
                  img_height=300,
                  img_width=300,
-                 background=(123, 117, 104),
+                 background=(123, 117, 104, 123, 117, 104),
                  labels_format={'class_id': 0, 'xmin': 1, 'ymin': 2, 'xmax': 3, 'ymax': 4}):
         '''
         Arguments:
@@ -325,7 +325,7 @@ class SSDDataAugmentation_Siamese:
                                          interpolation_modes=[cv2.INTER_NEAREST,
                                                               cv2.INTER_LINEAR,
                                                               cv2.INTER_CUBIC,
-                                                              cv2.INTER_AREA,
+                                                              # cv2.INTER_AREA,
                                                               cv2.INTER_LANCZOS4],
                                          box_filter=self.box_filter,
                                          labels_format=self.labels_format)
