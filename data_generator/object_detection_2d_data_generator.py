@@ -1438,4 +1438,4 @@ class DataGenerator:
         Returns:
             The number of images in the dataset.
         '''
-        return self.dataset_size + self.target_dataset_size
+        return self.dataset_size
