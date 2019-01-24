@@ -297,11 +297,11 @@ class DataGenerator:
             self.labels = []
             labels = self.hdf5_dataset['labels']
             label_shapes = self.hdf5_dataset['label_shapes']
-            if verbose: tr = trange(self.dataset_size, desc='Loading labels', file=sys.stdout)
+            if verbose: tr = trange(self.dataset_size, desc='Loading source labels', file=sys.stdout)
             else: tr = range(self.dataset_size)
             for i in tr:
-                if len(labels[i]) == 0:  # remove no groundtruth file
-                    raise Exception('This image has no groundtruth boxes. You should remove it.')
+                # if len(labels[i]) == 0:  # remove no groundtruth file
+                #     raise Exception('This image has no groundtruth boxes. You should remove it.')
                 self.labels.append(labels[i].reshape(label_shapes[i]))
 
         if self.hdf5_dataset.attrs['has_image_ids']:

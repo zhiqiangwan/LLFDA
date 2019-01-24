@@ -36,10 +36,6 @@ mean_color = [123, 117, 104] # Per-channel mean of images. Do not change if use 
 # The color channel order in the original SSD is BGR,
 # so we'll have the model reverse the color channel order of the input images.
 swap_channels = [2, 1, 0]
-classes = ['background',
-           'person', 'rider', 'car', 'truck',
-           'bus', 'train', 'motorcycle', 'bicycle']
-n_classes = len(classes) - 1  # Number of positive classes, 8 for domain Cityscapes, 20 for Pascal VOC, 80 for MS COCO
 # The anchor box scaling factors used in the original SSD300 for the Pascal VOC datasets
 # scales_pascal = [0.1, 0.2, 0.37, 0.54, 0.71, 0.88, 1.05]
 # The anchor box scaling factors used in the original SSD300 for the MS COCO datasets
@@ -64,12 +60,66 @@ Model_Build = 'New_Model'  # 'Load_Model'
 Optimizer_Type = 'Adam'  # 'SGD'  #
 batch_size = 16  # Change the batch size if you like, or if you run into GPU memory issues.
 # alpha_distance = 0.0001  # Coefficient for the distance between the source and target feature maps.
-loss_weights = [0.0, 0.0, 0.0] + [0.01, 0.05, 0.2, 1.0, 2.0, 4.0] + [1.0]
+loss_weights = [0.00001, 0.00001, 0.00001] + [0.0, 0.0, 0.0, 0.0, 0.0, 0.0] + [1.0]
+Source_Only = False
 
-if len(glob.glob('*.h5')):
+DatasetName = 'SIM10K'  # 'Cityscapes_foggy_beta_0_01'  #
+processed_dataset_path = './processed_dataset_h5/' + DatasetName
+if len(glob.glob(os.path.join(processed_dataset_path, '*.h5'))):
     Dataset_Build = 'Load_Dataset'
 else:
     Dataset_Build = 'New_Dataset'
+
+if DatasetName == 'Cityscapes_foggy_beta_0_01':
+    # Introduction of PascalVOC: https://arleyzhang.github.io/articles/1dc20586/
+    # The directories that contain the images.
+    train_source_images_dir = '../../datasets/Cityscapes/JPEGImages'
+    train_target_images_dir = '../../datasets/CITYSCAPES_beta_0_01/JPEGImages'
+    test_target_images_dir = '../../datasets/CITYSCAPES_beta_0_01/JPEGImages'
+
+    # The directories that contain the annotations.
+    train_annotation_dir = '../../datasets/Cityscapes/Annotations'
+    test_annotation_dir = '../../datasets/Cityscapes/Annotations'
+
+    # The paths to the image sets.
+    train_source_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/train_source.txt'
+    train_target_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/train_target.txt'
+    test_target_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/test.txt'
+    classes = ['background',
+               'person', 'rider', 'car', 'truck',
+               'bus', 'train', 'motorcycle', 'bicycle']
+    train_classes = classes
+    train_include_classes = 'all'
+    val_classes = classes
+    val_include_classes = 'all'
+    # Number of positive classes, 8 for domain Cityscapes, 20 for Pascal VOC, 80 for MS COCO, 1 for SIM10K
+    n_classes = len(classes) - 1
+
+elif DatasetName == 'SIM10K':
+    # The directories that contain the images.
+    train_source_images_dir = '../../datasets/SIM10K/JPEGImages'
+    train_target_images_dir = '../../datasets/Cityscapes/JPEGImages'
+    test_target_images_dir = '../../datasets/val_data_for_SIM10K_to_cityscapes/JPEGImages'
+
+    # The directories that contain the annotations.
+    train_annotation_dir = '../../datasets/SIM10K/Annotations'
+    test_annotation_dir = '../../datasets/val_data_for_SIM10K_to_cityscapes/Annotations'
+
+    # The paths to the image sets.
+    train_source_image_set_filename = '../../datasets/SIM10K/ImageSets/Main/trainval10k.txt'
+    train_target_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/train_source.txt'
+    test_target_image_set_filename = '../../datasets/val_data_for_SIM10K_to_cityscapes/ImageSets/Main/test.txt'
+
+    classes = ['background', 'car']  # Our model will produce predictions for these classes.
+    train_classes = ['background', 'car', 'motorbike', 'person']  # The train_source dataset contains these classes.
+    train_include_classes = [train_classes.index(one_class) for one_class in classes[1:]]
+    # The test_target dataset contains these classes.
+    val_classes = ['background', 'car']
+    val_include_classes = 'all'
+    # Number of positive classes, 8 for domain Cityscapes, 20 for Pascal VOC, 80 for MS COCO, 1 for SIM10K
+    n_classes = len(classes) - 1
+else:
+    raise ValueError('Undefined dataset name.')
 
 if Model_Build == 'New_Model':
     # 1: Build the Keras model.
@@ -121,26 +171,48 @@ if Model_Build == 'New_Model':
 
     ssd_loss = SSDLoss(neg_pos_ratio=3, alpha=1.0)
 
-    model.compile(optimizer=Optimizer, loss={'pool1_GAP_substract': ssd_loss.compute_distance_loss,
-                                             'pool2_GAP_substract': ssd_loss.compute_distance_loss,
-                                             'pool3_GAP_substract': ssd_loss.compute_distance_loss,
-                                             'conv4_3_norm_GAP_substract': ssd_loss.compute_distance_loss,
-                                             'fc7_GAP_substract': ssd_loss.compute_distance_loss,
-                                             'conv6_2_GAP_substract': ssd_loss.compute_distance_loss,
-                                             'conv7_2_GAP_substract': ssd_loss.compute_distance_loss,
-                                             'conv8_2_GAP_substract': ssd_loss.compute_distance_loss,
-                                             'conv9_2_GAP_substract': ssd_loss.compute_distance_loss,
-                                             'predictions': ssd_loss.compute_loss},
-                  loss_weights={'pool1_GAP_substract': loss_weights[0],
-                                'pool2_GAP_substract': loss_weights[1],
-                                'pool3_GAP_substract': loss_weights[2],
-                                'conv4_3_norm_GAP_substract': loss_weights[3],
-                                'fc7_GAP_substract': loss_weights[4],
-                                'conv6_2_GAP_substract': loss_weights[5],
-                                'conv7_2_GAP_substract': loss_weights[6],
-                                'conv8_2_GAP_substract': loss_weights[7],
-                                'conv9_2_GAP_substract': loss_weights[8],
-                                'predictions': loss_weights[9]})
+    if Source_Only:
+        model.compile(optimizer=Optimizer, loss={'pool1_GAP_substract': ssd_loss.compute_distance_loss_source_only,
+                                                 'pool2_GAP_substract': ssd_loss.compute_distance_loss_source_only,
+                                                 'pool3_GAP_substract': ssd_loss.compute_distance_loss_source_only,
+                                                 'conv4_3_norm_GAP_substract': ssd_loss.compute_distance_loss_source_only,
+                                                 'fc7_GAP_substract': ssd_loss.compute_distance_loss_source_only,
+                                                 'conv6_2_GAP_substract': ssd_loss.compute_distance_loss_source_only,
+                                                 'conv7_2_GAP_substract': ssd_loss.compute_distance_loss_source_only,
+                                                 'conv8_2_GAP_substract': ssd_loss.compute_distance_loss_source_only,
+                                                 'conv9_2_GAP_substract': ssd_loss.compute_distance_loss_source_only,
+                                                 'predictions': ssd_loss.compute_loss},
+                      loss_weights={'pool1_GAP_substract': loss_weights[0],
+                                    'pool2_GAP_substract': loss_weights[1],
+                                    'pool3_GAP_substract': loss_weights[2],
+                                    'conv4_3_norm_GAP_substract': loss_weights[3],
+                                    'fc7_GAP_substract': loss_weights[4],
+                                    'conv6_2_GAP_substract': loss_weights[5],
+                                    'conv7_2_GAP_substract': loss_weights[6],
+                                    'conv8_2_GAP_substract': loss_weights[7],
+                                    'conv9_2_GAP_substract': loss_weights[8],
+                                    'predictions': loss_weights[9]})
+    else:
+        model.compile(optimizer=Optimizer, loss={'pool1_GAP_substract': ssd_loss.compute_distance_loss,
+                                                 'pool2_GAP_substract': ssd_loss.compute_distance_loss,
+                                                 'pool3_GAP_substract': ssd_loss.compute_distance_loss,
+                                                 'conv4_3_norm_GAP_substract': ssd_loss.compute_distance_loss,
+                                                 'fc7_GAP_substract': ssd_loss.compute_distance_loss,
+                                                 'conv6_2_GAP_substract': ssd_loss.compute_distance_loss,
+                                                 'conv7_2_GAP_substract': ssd_loss.compute_distance_loss,
+                                                 'conv8_2_GAP_substract': ssd_loss.compute_distance_loss,
+                                                 'conv9_2_GAP_substract': ssd_loss.compute_distance_loss,
+                                                 'predictions': ssd_loss.compute_loss},
+                      loss_weights={'pool1_GAP_substract': loss_weights[0],
+                                    'pool2_GAP_substract': loss_weights[1],
+                                    'pool3_GAP_substract': loss_weights[2],
+                                    'conv4_3_norm_GAP_substract': loss_weights[3],
+                                    'fc7_GAP_substract': loss_weights[4],
+                                    'conv6_2_GAP_substract': loss_weights[5],
+                                    'conv7_2_GAP_substract': loss_weights[6],
+                                    'conv8_2_GAP_substract': loss_weights[7],
+                                    'conv9_2_GAP_substract': loss_weights[8],
+                                    'predictions': loss_weights[9]})
 
 elif Model_Build == 'Load_Model':
     # TODO: Set the path to the `.h5` file of the model to be loaded.
@@ -177,39 +249,23 @@ if Dataset_Build == 'New_Dataset':
     val_dataset = DataGenerator(dataset='val', load_images_into_memory=False, hdf5_dataset_path=None)
 
     # 2: Parse the image and label lists for the training and validation datasets. This can take a while.
-
-    # TODO: Set the paths to the datasets here.
-
-    # Introduction of PascalVOC: https://arleyzhang.github.io/articles/1dc20586/
-    # The directories that contain the images.
-    Cityscapes_images_dir = '../../datasets/Cityscapes/JPEGImages'
-    Cityscapes_target_images_dir = '../../datasets/CITYSCAPES_beta_0_01/JPEGImages'
-
-    # The directories that contain the annotations.
-    Cityscapes_annotation_dir = '../../datasets/Cityscapes/Annotations'
-
-    # The paths to the image sets.
-    Cityscapes_train_source_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/train_source.txt'
-    Cityscapes_train_target_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/train_target.txt'
-    Cityscapes_test_target_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/test.txt'
-
     # images_dirs, image_set_filenames, and annotations_dirs should have the same length
-    train_dataset.parse_xml(images_dirs=[Cityscapes_images_dir],
-                            target_images_dirs=[Cityscapes_target_images_dir],
-                            image_set_filenames=[Cityscapes_train_source_image_set_filename],
-                            target_image_set_filenames=[Cityscapes_train_target_image_set_filename],
-                            annotations_dirs=[Cityscapes_annotation_dir],
-                            classes=classes,
-                            include_classes='all',
+    train_dataset.parse_xml(images_dirs=[train_source_images_dir],
+                            target_images_dirs=[train_target_images_dir],
+                            image_set_filenames=[train_source_image_set_filename],
+                            target_image_set_filenames=[train_target_image_set_filename],
+                            annotations_dirs=[train_annotation_dir],
+                            classes=train_classes,
+                            include_classes=train_include_classes,
                             exclude_truncated=False,
                             exclude_difficult=False,
                             ret=False)
 
-    val_dataset.parse_xml(images_dirs=[Cityscapes_target_images_dir],
-                          image_set_filenames=[Cityscapes_test_target_image_set_filename],
-                          annotations_dirs=[Cityscapes_annotation_dir],
-                          classes=classes,
-                          include_classes='all',
+    val_dataset.parse_xml(images_dirs=[test_target_images_dir],
+                          image_set_filenames=[test_target_image_set_filename],
+                          annotations_dirs=[test_annotation_dir],
+                          classes=val_classes,
+                          include_classes=val_include_classes,
                           exclude_truncated=False,
                           exclude_difficult=True,
                           ret=False)
@@ -223,61 +279,51 @@ if Dataset_Build == 'New_Dataset':
     # the images and the labels will not change.
 
     resize_image_to = (300, 600)
-    train_dataset.create_hdf5_dataset(file_path='dataset_cityscapes_train.h5',
+    train_dataset.create_hdf5_dataset(file_path=os.path.join(processed_dataset_path, 'dataset_cityscapes_train.h5'),
                                       resize=resize_image_to,
                                       variable_image_size=True,
                                       verbose=True)
 
-    val_dataset.create_hdf5_dataset(file_path='dataset_cityscapes_test.h5',
+    val_dataset.create_hdf5_dataset(file_path=os.path.join(processed_dataset_path, 'dataset_cityscapes_test.h5'),
                                     resize=resize_image_to,
                                     variable_image_size=True,
                                     verbose=True)
 
     train_dataset = DataGenerator(dataset='train',
                                   load_images_into_memory=False,
-                                  hdf5_dataset_path='dataset_cityscapes_train.h5',
-                                  filenames=Cityscapes_train_source_image_set_filename,
-                                  target_filenames=Cityscapes_train_target_image_set_filename,
+                                  hdf5_dataset_path=os.path.join(processed_dataset_path, 'dataset_cityscapes_train.h5'),
+                                  filenames=train_source_image_set_filename,
+                                  target_filenames=train_target_image_set_filename,
                                   filenames_type='text',
-                                  images_dir=Cityscapes_images_dir,
-                                  target_images_dir=Cityscapes_target_images_dir)
+                                  images_dir=train_source_images_dir,
+                                  target_images_dir=train_target_images_dir)
 
     val_dataset = DataGenerator(dataset='val',
                                 load_images_into_memory=False,
-                                hdf5_dataset_path='dataset_cityscapes_test.h5',
-                                filenames=Cityscapes_test_target_image_set_filename,
+                                hdf5_dataset_path=os.path.join(processed_dataset_path, 'dataset_cityscapes_test.h5'),
+                                filenames=test_target_image_set_filename,
                                 filenames_type='text',
-                                images_dir=Cityscapes_target_images_dir)
+                                images_dir=test_target_images_dir)
 
 elif Dataset_Build == 'Load_Dataset':
     # 1: Instantiate two `DataGenerator` objects: One for training, one for validation.
 
     # Load dataset from the created h5 file.
-
-    # The directories that contain the images.
-    Cityscapes_images_dir = '../../datasets/Cityscapes/JPEGImages'
-    Cityscapes_target_images_dir = '../../datasets/CITYSCAPES_beta_0_01/JPEGImages'
-
-    # The paths to the image sets.
-    Cityscapes_train_source_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/train_source.txt'
-    Cityscapes_train_target_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/train_target.txt'
-    Cityscapes_test_target_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/test.txt'
-
     train_dataset = DataGenerator(dataset='train',
                                   load_images_into_memory=False,
-                                  hdf5_dataset_path='dataset_cityscapes_train.h5',
-                                  filenames=Cityscapes_train_source_image_set_filename,
-                                  target_filenames=Cityscapes_train_target_image_set_filename,
+                                  hdf5_dataset_path=os.path.join(processed_dataset_path, 'dataset_cityscapes_train.h5'),
+                                  filenames=train_source_image_set_filename,
+                                  target_filenames=train_target_image_set_filename,
                                   filenames_type='text',
-                                  images_dir=Cityscapes_images_dir,
-                                  target_images_dir=Cityscapes_target_images_dir)
+                                  images_dir=train_source_images_dir,
+                                  target_images_dir=train_target_images_dir)
 
     val_dataset = DataGenerator(dataset='val',
                                 load_images_into_memory=False,
-                                hdf5_dataset_path='dataset_cityscapes_test.h5',
-                                filenames=Cityscapes_test_target_image_set_filename,
+                                hdf5_dataset_path=os.path.join(processed_dataset_path, 'dataset_cityscapes_test.h5'),
+                                filenames=test_target_image_set_filename,
                                 filenames_type='text',
-                                images_dir=Cityscapes_target_images_dir)
+                                images_dir=test_target_images_dir)
 
 else:
     raise ValueError('Undefined Dataset_Build. Dataset_Build should be New_Dataset or Load_Dataset.')
@@ -347,6 +393,8 @@ print("Number of images in the validation dataset:\t{:>6}".format(val_dataset_si
 
 while True:
     batch_result = next(train_generator)
+    if batch_result[0][0].shape[0] != 16:
+        print('False')
     batch_result = next(val_generator)
 
 

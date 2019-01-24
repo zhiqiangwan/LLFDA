@@ -1,7 +1,7 @@
-import numpy as np
-import cv2
+import os
+import glob
 
-input_arr = np.arange(0)
-slice_input = input_arr[95:95+20]
-
-print('True')
+processed_dataset_path = './processed_dataset_h5/SIM10K'
+path = os.path.join(processed_dataset_path, '*.h5')
+a = glob.glob(os.path.join(processed_dataset_path, '*.h5'))
+print(a)

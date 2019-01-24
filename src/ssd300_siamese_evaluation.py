@@ -25,10 +25,6 @@ from eval_utils.average_precision_evaluator import Evaluator
 # Set a few configuration parameters.
 img_height = 300
 img_width = 300
-classes = ['background',
-           'person', 'rider', 'car', 'truck',
-           'bus', 'train', 'motorcycle', 'bicycle']
-n_classes = len(classes) - 1
 # model_mode indicates the way the pretrained model was created.
 # In training model, Model_Build should == 'Load_Model'. decode_detections will be called in the Evaluator.
 # However, decode_detections is run on CPU and is very slow.
@@ -48,14 +44,69 @@ else:
 model_path = '../trained_weights/VGG_ssd300_Siamese_Cityscapes/epoch-14_loss-7.9135_val_loss-6.9257.h5'
 
 if evaluate_mode == 'Visualize_detection':
-    confidence_thresh = 0.35
+    confidence_thresh = 0.01
 elif evaluate_mode == 'MAP':
     confidence_thresh = 0.01
 else:
     raise ValueError('Undefined evaluate_mode.')
 
 batch_size = 16
-alpha_distance = 0.01
+Build_trainset_for_val = False  # True  #
+loss_weights = [0.0, 0.0, 0.0] + [0.0, 0.0, 0.0, 0.0, 0.0, 0.0] + [1.0]
+
+DatasetName = 'SIM10K'  # 'Cityscapes_foggy_beta_0_01'  #
+processed_dataset_path = './processed_dataset_h5/' + DatasetName
+
+if DatasetName == 'Cityscapes_foggy_beta_0_01':
+    # Introduction of PascalVOC: https://arleyzhang.github.io/articles/1dc20586/
+    # The directories that contain the images.
+    train_source_images_dir = '../../datasets/Cityscapes/JPEGImages'
+    train_target_images_dir = '../../datasets/CITYSCAPES_beta_0_01/JPEGImages'
+    test_target_images_dir = '../../datasets/CITYSCAPES_beta_0_01/JPEGImages'
+
+    # The directories that contain the annotations.
+    train_annotation_dir = '../../datasets/Cityscapes/Annotations'
+    test_annotation_dir = '../../datasets/Cityscapes/Annotations'
+
+    # The paths to the image sets.
+    train_source_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/train_source.txt'
+    train_target_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/train_target.txt'
+    test_target_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/test.txt'
+    classes = ['background',
+               'person', 'rider', 'car', 'truck',
+               'bus', 'train', 'motorcycle', 'bicycle']
+    train_classes = classes
+    train_include_classes = 'all'
+    val_classes = classes
+    val_include_classes = 'all'
+    # Number of positive classes, 8 for domain Cityscapes, 20 for Pascal VOC, 80 for MS COCO, 1 for SIM10K
+    n_classes = len(classes) - 1
+
+elif DatasetName == 'SIM10K':
+    # The directories that contain the images.
+    train_source_images_dir = '../../datasets/SIM10K/JPEGImages'
+    train_target_images_dir = '../../datasets/Cityscapes/JPEGImages'
+    test_target_images_dir = '../../datasets/val_data_for_SIM10K_to_cityscapes/JPEGImages'
+
+    # The directories that contain the annotations.
+    train_annotation_dir = '../../datasets/SIM10K/Annotations'
+    test_annotation_dir = '../../datasets/val_data_for_SIM10K_to_cityscapes/Annotations'
+
+    # The paths to the image sets.
+    train_source_image_set_filename = '../../datasets/SIM10K/ImageSets/Main/trainval10k.txt'
+    train_target_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/train_source.txt'
+    test_target_image_set_filename = '../../datasets/val_data_for_SIM10K_to_cityscapes/ImageSets/Main/test.txt'
+
+    classes = ['background', 'car']  # Our model will produce predictions for these classes.
+    train_classes = ['background', 'car', 'motorbike', 'person']  # The train_source dataset contains these classes.
+    train_include_classes = [train_classes.index(one_class) for one_class in classes[1:]]
+    # The test_target dataset contains these classes.
+    val_classes = ['background', 'car']
+    val_include_classes = 'all'
+    # Number of positive classes, 8 for domain Cityscapes, 20 for Pascal VOC, 80 for MS COCO, 1 for SIM10K
+    n_classes = len(classes) - 1
+else:
+    raise ValueError('Undefined dataset name.')
 
 if Model_Build == 'New_Model_Load_Weights':
     # 1: Build the Keras model
@@ -139,35 +190,21 @@ else:
 # 1: Instantiate two `DataGenerator` objects: One for training, one for validation.
 
 # Load dataset from the created h5 file.
-
-# The directories that contain the images.
-Cityscapes_images_dir = '../../datasets/Cityscapes/JPEGImages'
-
-# The paths to the image sets.
-Cityscapes_train_source_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/train_source.txt'
-Cityscapes_train_target_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/train_target.txt'
-Cityscapes_test_target_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/test.txt'
-
-train_filename_paths = [Cityscapes_train_source_image_set_filename,
-                        Cityscapes_train_target_image_set_filename]
-train_filenames = []
-for filename_path in train_filename_paths:
-    with open(filename_path, 'r') as f:
-        train_filenames.extend([os.path.join(Cityscapes_images_dir, line.strip()) for line in f])
-
 train_dataset = DataGenerator(dataset='train',
                               load_images_into_memory=False,
-                              hdf5_dataset_path='dataset_cityscapes_train.h5',
-                              filenames=train_filenames,
+                              hdf5_dataset_path=os.path.join(processed_dataset_path, 'dataset_cityscapes_train.h5'),
+                              filenames=train_source_image_set_filename,
+                              target_filenames=train_target_image_set_filename,
                               filenames_type='text',
-                              images_dir=Cityscapes_images_dir)
+                              images_dir=train_source_images_dir,
+                              target_images_dir=train_target_images_dir)
 
 val_dataset = DataGenerator(dataset='val',
                             load_images_into_memory=False,
-                            hdf5_dataset_path='dataset_cityscapes_test.h5',
-                            filenames=Cityscapes_test_target_image_set_filename,
+                            hdf5_dataset_path=os.path.join(processed_dataset_path, 'dataset_cityscapes_test.h5'),
+                            filenames=test_target_image_set_filename,
                             filenames_type='text',
-                            images_dir=Cityscapes_images_dir)
+                            images_dir=test_target_images_dir)
 
 if evaluate_mode == 'Visualize_detection':
     # Make predictions:
