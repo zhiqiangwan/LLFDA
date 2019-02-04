@@ -12,7 +12,7 @@ from math import ceil
 import numpy as np
 from matplotlib import pyplot as plt
 
-from models.keras_ssd300_Siamese import ssd_300
+from models.keras_ssd512_Siamese import ssd_512
 from keras_loss_function.keras_ssd_loss import SSDLoss
 from keras_layers.keras_layer_AnchorBoxes import AnchorBoxes
 from keras_layers.keras_layer_DecodeDetections import DecodeDetections
@@ -29,42 +29,44 @@ from data_generator.data_augmentation_chain_original_ssd import SSDDataAugmentat
 from data_generator.object_detection_2d_misc_utils import apply_inverse_transforms
 
 
-img_height = 300 # Height of the model input images
-img_width = 300 # Width of the model input images
-img_channels = 3 # Number of color channels of the model input images
-mean_color = [123, 117, 104] # Per-channel mean of images. Do not change if use any of the pre-trained weights.
+img_height = 512  # Height of the model input images
+img_width = 512  # Width of the model input images
+img_channels = 3  # Number of color channels of the model input images
+mean_color = [123, 117, 104]  # Per-channel mean of images. Do not change if use any of the pre-trained weights.
 # The color channel order in the original SSD is BGR,
 # so we'll have the model reverse the color channel order of the input images.
 swap_channels = [2, 1, 0]
-# The anchor box scaling factors used in the original SSD300 for the Pascal VOC datasets
-scales_pascal = [0.1, 0.2, 0.37, 0.54, 0.71, 0.88, 1.05]
-# The anchor box scaling factors used in the original SSD300 for the MS COCO datasets
-# scales_coco = [0.07, 0.15, 0.33, 0.51, 0.69, 0.87, 1.05]
-scales = scales_pascal
+# The anchor box scaling factors used in the original SSD512 for the Pascal VOC datasets
+# scales_pascal =
+# The anchor box scaling factors used in the original SSD512 for the MS COCO datasets
+scales_coco = [0.07, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1.05]
+scales = scales_coco
 aspect_ratios = [[1.0, 2.0, 0.5],
                  [1.0, 2.0, 0.5, 3.0, 1.0/3.0],
                  [1.0, 2.0, 0.5, 3.0, 1.0/3.0],
                  [1.0, 2.0, 0.5, 3.0, 1.0/3.0],
+                 [1.0, 2.0, 0.5, 3.0, 1.0/3.0],
                  [1.0, 2.0, 0.5],
-                 [1.0, 2.0, 0.5]] # The anchor box aspect ratios used in the original SSD300; the order matters
+                 [1.0, 2.0, 0.5]]  # The anchor box aspect ratios used in the original SSD512; the order matters
 two_boxes_for_ar1 = True
-steps = [8, 16, 32, 64, 100, 300] # The space between two adjacent anchor box center points for each predictor layer.
+steps = [8, 16, 32, 64, 128, 256, 512]  # Space between two adjacent anchor box center points for each predictor layer.
 # The offsets of the first anchor box center points from the top and left borders of the image
 # as a fraction of the step size for each predictor layer.
-offsets = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
-clip_boxes = False # Whether or not to clip the anchor boxes to lie entirely within the image boundaries
+offsets = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
+clip_boxes = False  # Whether or not to clip the anchor boxes to lie entirely within the image boundaries
 # The variances by which the encoded target coordinates are divided as in the original implementation
 variances = [0.1, 0.1, 0.2, 0.2]
 normalize_coords = True
 Model_Build = 'New_Model'  # 'Load_Model'
-Optimizer_Type =  'SGD'  # 'Adam'  #
+Optimizer_Type = 'SGD'  # 'Adam'  #
 batch_size = 16  # Change the batch size if you like, or if you run into GPU memory issues.
 # alpha_distance = 0.0001  # Coefficient for the distance between the source and target feature maps.
-loss_weights = [0.00001, 0.00001, 0.00001] + [0.0, 0.0, 0.0, 0.0, 0.0, 0.0] + [1.0]
+loss_weights = [0.00001, 0.00001, 0.00001] + [1.0]
 Source_Only = False
 
-# 'City_to_foggy0_02_resize_600_1200'  # 'SIM10K_to_VOC07'  # 'SIM10K'  # 'Cityscapes_foggy_beta_0_01'  #
-DatasetName = 'City_to_foggy0_01_resize_600_1200'
+# 'City_to_foggy0_01_resize_600_1200' # 'City_to_foggy0_02_resize_600_1200'  # 'SIM10K_to_VOC07'
+# 'SIM10K'  # 'Cityscapes_foggy_beta_0_01'  # 'City_to_foggy0_01_resize_400_800' # 'City_to_foggy0_02_resize_400_800'
+DatasetName = 'SIM10K_to_City_resize_400_800'
 processed_dataset_path = './processed_dataset_h5/' + DatasetName
 if not os.path.exists(processed_dataset_path):
     os.makedirs(processed_dataset_path)
@@ -74,7 +76,86 @@ if len(glob.glob(os.path.join(processed_dataset_path, '*.h5'))):
 else:
     Dataset_Build = 'New_Dataset'
 
-if DatasetName == 'City_to_foggy0_01_resize_600_1200':
+if DatasetName == 'SIM10K_to_City_resize_400_800':
+    resize_image_to = (400, 800)
+    # The directories that contain the images.
+    train_source_images_dir = '../../datasets/SIM10K/JPEGImages'
+    train_target_images_dir = '../../datasets/Cityscapes/JPEGImages'
+    test_target_images_dir = '../../datasets/val_data_for_SIM10K_to_cityscapes/JPEGImages'
+
+    # The directories that contain the annotations.
+    train_annotation_dir = '../../datasets/SIM10K/Annotations'
+    test_annotation_dir = '../../datasets/val_data_for_SIM10K_to_cityscapes/Annotations'
+
+    # The paths to the image sets.
+    train_source_image_set_filename = '../../datasets/SIM10K/ImageSets/Main/trainval10k.txt'
+    train_target_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/train_source.txt'
+    test_target_image_set_filename = '../../datasets/val_data_for_SIM10K_to_cityscapes/ImageSets/Main/test.txt'
+
+    classes = ['background', 'car']  # Our model will produce predictions for these classes.
+    train_classes = ['background', 'car', 'motorbike', 'person']  # The train_source dataset contains these classes.
+    train_include_classes = [train_classes.index(one_class) for one_class in classes[1:]]
+    # The test_target dataset contains these classes.
+    val_classes = ['background', 'car']
+    val_include_classes = 'all'
+    # Number of positive classes, 8 for domain Cityscapes, 20 for Pascal VOC, 80 for MS COCO, 1 for SIM10K
+    n_classes = len(classes) - 1
+
+elif DatasetName == 'City_to_foggy0_02_resize_400_800':
+    resize_image_to = (400, 800)
+    # Introduction of PascalVOC: https://arleyzhang.github.io/articles/1dc20586/
+    # The directories that contain the images.
+    train_source_images_dir = '../../datasets/Cityscapes/JPEGImages'
+    train_target_images_dir = '../../datasets/Cityscapes/JPEGImages'
+    test_target_images_dir = '../../datasets/Cityscapes/JPEGImages'
+
+    # The directories that contain the annotations.
+    train_annotation_dir = '../../datasets/Cityscapes/Annotations'
+    test_annotation_dir = '../../datasets/Cityscapes/Annotations'
+
+    # The paths to the image sets.
+    train_source_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/train_source.txt'
+    train_target_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/train_target.txt'
+    test_target_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/test.txt'
+    # Our model will produce predictions for these classes.
+    classes = ['background',
+               'person', 'rider', 'car', 'truck',
+               'bus', 'train', 'motorcycle', 'bicycle']
+    train_classes = classes
+    train_include_classes = 'all'
+    val_classes = classes
+    val_include_classes = 'all'
+    # Number of positive classes, 8 for domain Cityscapes, 20 for Pascal VOC, 80 for MS COCO, 1 for SIM10K
+    n_classes = len(classes) - 1
+
+elif DatasetName == 'City_to_foggy0_01_resize_400_800':
+    resize_image_to = (400, 800)
+    # Introduction of PascalVOC: https://arleyzhang.github.io/articles/1dc20586/
+    # The directories that contain the images.
+    train_source_images_dir = '../../datasets/Cityscapes/JPEGImages'
+    train_target_images_dir = '../../datasets/CITYSCAPES_beta_0_01/JPEGImages'
+    test_target_images_dir = '../../datasets/CITYSCAPES_beta_0_01/JPEGImages'
+
+    # The directories that contain the annotations.
+    train_annotation_dir = '../../datasets/Cityscapes/Annotations'
+    test_annotation_dir = '../../datasets/Cityscapes/Annotations'
+
+    # The paths to the image sets.
+    train_source_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/train_source.txt'
+    train_target_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/train_target.txt'
+    test_target_image_set_filename = '../../datasets/Cityscapes/ImageSets/Main/test.txt'
+    # Our model will produce predictions for these classes.
+    classes = ['background',
+               'person', 'rider', 'car', 'truck',
+               'bus', 'train', 'motorcycle', 'bicycle']
+    train_classes = classes
+    train_include_classes = 'all'
+    val_classes = classes
+    val_include_classes = 'all'
+    # Number of positive classes, 8 for domain Cityscapes, 20 for Pascal VOC, 80 for MS COCO, 1 for SIM10K
+    n_classes = len(classes) - 1
+
+elif DatasetName == 'City_to_foggy0_01_resize_600_1200':
     resize_image_to = (600, 1200)
     # Introduction of PascalVOC: https://arleyzhang.github.io/articles/1dc20586/
     # The directories that contain the images.
@@ -229,7 +310,7 @@ if Model_Build == 'New_Model':
     # sess = tf.Session(config=config)
     # set_session(sess)  # set this TensorFlow session as the default session for Keras
 
-    model = ssd_300(image_size=(img_height, img_width, img_channels),
+    model = ssd_512(image_size=(img_height, img_width, img_channels),
                     n_classes=n_classes,
                     mode='training',
                     l2_regularization=0.0005,
@@ -268,44 +349,20 @@ if Model_Build == 'New_Model':
         model.compile(optimizer=Optimizer, loss={'pool1_GAP_substract': ssd_loss.compute_distance_loss_source_only,
                                                  'pool2_GAP_substract': ssd_loss.compute_distance_loss_source_only,
                                                  'pool3_GAP_substract': ssd_loss.compute_distance_loss_source_only,
-                                                 'conv4_3_norm_GAP_substract': ssd_loss.compute_distance_loss_source_only,
-                                                 'fc7_GAP_substract': ssd_loss.compute_distance_loss_source_only,
-                                                 'conv6_2_GAP_substract': ssd_loss.compute_distance_loss_source_only,
-                                                 'conv7_2_GAP_substract': ssd_loss.compute_distance_loss_source_only,
-                                                 'conv8_2_GAP_substract': ssd_loss.compute_distance_loss_source_only,
-                                                 'conv9_2_GAP_substract': ssd_loss.compute_distance_loss_source_only,
                                                  'predictions': ssd_loss.compute_loss},
                       loss_weights={'pool1_GAP_substract': loss_weights[0],
                                     'pool2_GAP_substract': loss_weights[1],
                                     'pool3_GAP_substract': loss_weights[2],
-                                    'conv4_3_norm_GAP_substract': loss_weights[3],
-                                    'fc7_GAP_substract': loss_weights[4],
-                                    'conv6_2_GAP_substract': loss_weights[5],
-                                    'conv7_2_GAP_substract': loss_weights[6],
-                                    'conv8_2_GAP_substract': loss_weights[7],
-                                    'conv9_2_GAP_substract': loss_weights[8],
-                                    'predictions': loss_weights[9]})
+                                    'predictions': loss_weights[3]})
     else:
         model.compile(optimizer=Optimizer, loss={'pool1_GAP_substract': ssd_loss.compute_distance_loss,
                                                  'pool2_GAP_substract': ssd_loss.compute_distance_loss,
                                                  'pool3_GAP_substract': ssd_loss.compute_distance_loss,
-                                                 'conv4_3_norm_GAP_substract': ssd_loss.compute_distance_loss,
-                                                 'fc7_GAP_substract': ssd_loss.compute_distance_loss,
-                                                 'conv6_2_GAP_substract': ssd_loss.compute_distance_loss,
-                                                 'conv7_2_GAP_substract': ssd_loss.compute_distance_loss,
-                                                 'conv8_2_GAP_substract': ssd_loss.compute_distance_loss,
-                                                 'conv9_2_GAP_substract': ssd_loss.compute_distance_loss,
                                                  'predictions': ssd_loss.compute_loss},
                       loss_weights={'pool1_GAP_substract': loss_weights[0],
                                     'pool2_GAP_substract': loss_weights[1],
                                     'pool3_GAP_substract': loss_weights[2],
-                                    'conv4_3_norm_GAP_substract': loss_weights[3],
-                                    'fc7_GAP_substract': loss_weights[4],
-                                    'conv6_2_GAP_substract': loss_weights[5],
-                                    'conv7_2_GAP_substract': loss_weights[6],
-                                    'conv8_2_GAP_substract': loss_weights[7],
-                                    'conv9_2_GAP_substract': loss_weights[8],
-                                    'predictions': loss_weights[9]})
+                                    'predictions': loss_weights[3]})
 
 elif Model_Build == 'Load_Model':
     # TODO: Set the path to the `.h5` file of the model to be loaded.
@@ -438,7 +495,8 @@ predictor_sizes = [model.get_layer('conv4_3_norm_mbox_conf').output_shape[1:3],
                    model.get_layer('conv6_2_mbox_conf').output_shape[1:3],
                    model.get_layer('conv7_2_mbox_conf').output_shape[1:3],
                    model.get_layer('conv8_2_mbox_conf').output_shape[1:3],
-                   model.get_layer('conv9_2_mbox_conf').output_shape[1:3]]
+                   model.get_layer('conv9_2_mbox_conf').output_shape[1:3],
+                   model.get_layer('conv10_2_mbox_conf').output_shape[1:3]]
 
 ssd_input_encoder = SSDInputEncoder(img_height=img_height,
                                     img_width=img_width,
@@ -500,7 +558,7 @@ def lr_schedule(epoch):
 
 
 # Define model callbacks.
-checkpoint_path = '../trained_weights/VGG_ssd300_Siamese_Cityscapes'
+checkpoint_path = '../trained_weights/SSD512_City_to_foggy0_01_resize_400_800/current/pool123_loss_weights_0_000001'
 if not os.path.exists(checkpoint_path):
     os.makedirs(checkpoint_path)
 
@@ -509,14 +567,14 @@ model_checkpoint = ModelCheckpoint(filepath=os.path.join(checkpoint_path, 'epoch
                                    monitor='val_loss',
                                    verbose=1,
                                    save_best_only=False,
-                                   save_weights_only=False,
+                                   save_weights_only=True,
                                    mode='auto',
                                    period=1)
 
 # model_checkpoint.best to the best validation loss from the previous training
 # model_checkpoint.best = 4.83704
 
-csv_logger = CSVLogger(filename=os.path.join(checkpoint_path, 'ssd300_Siamese_Cityscapes_training_log.csv'),
+csv_logger = CSVLogger(filename=os.path.join(checkpoint_path, 'pool123_loss_weights_0_000001_training_log.csv'),
                        separator=',',
                        append=True)
 

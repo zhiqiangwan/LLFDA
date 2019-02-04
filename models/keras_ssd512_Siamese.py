@@ -18,8 +18,10 @@ limitations under the License.
 
 from __future__ import division
 import numpy as np
+
+import tensorflow as tf
 from keras.models import Model
-from keras.layers import Input, Lambda, Activation, Conv2D, MaxPooling2D, ZeroPadding2D, Reshape, Concatenate
+from keras.layers import Input, Lambda, Activation, Conv2D, MaxPooling2D, ZeroPadding2D, Reshape, Concatenate, Subtract, GlobalAveragePooling2D
 from keras.regularizers import l2
 import keras.backend as K
 
@@ -107,32 +109,34 @@ def ssd_512(image_size,
         aspect_ratios_per_layer (list, optional): A list containing one aspect ratio list for each prediction layer.
             This allows you to set the aspect ratios for each predictor layer individually, which is the case for the
             original SSD512 implementation. If a list is passed, it overrides `aspect_ratios_global`.
-        two_boxes_for_ar1 (bool, optional): Only relevant for aspect ratio lists that contain 1. Will be ignored otherwise.
+        two_boxes_for_ar1(bool,optional):Only relevant for aspect ratio lists that contain 1. Will be ignored otherwise.
             If `True`, two anchor boxes will be generated for aspect ratio 1. The first will be generated
             using the scaling factor for the respective layer, the second one will be generated using
             geometric mean of said scaling factor and next bigger scaling factor.
-        steps (list, optional): `None` or a list with as many elements as there are predictor layers. The elements can be
+        steps (list,optional): `None` or a list with as many elements as there are predictor layers. The elements can be
             either ints/floats or tuples of two ints/floats. These numbers represent for each predictor layer how many
             pixels apart the anchor box center points should be vertically and horizontally along the spatial grid over
             the image. If the list contains ints/floats, then that value will be used for both spatial dimensions.
             If the list contains tuples of two ints/floats, then they represent `(step_height, step_width)`.
             If no steps are provided, then they will be computed such that the anchor box center points will form an
             equidistant grid within the image dimensions.
-        offsets (list, optional): `None` or a list with as many elements as there are predictor layers. The elements can be
+        offsets(list,optional):`None` or a list with as many elements as there are predictor layers. The elements can be
             either floats or tuples of two floats. These numbers represent for each predictor layer how many
-            pixels from the top and left boarders of the image the top-most and left-most anchor box center points should be
-            as a fraction of `steps`. The last bit is important: The offsets are not absolute pixel values, but fractions
+            pixels from top and left boarders of the image the top-most and left-most anchor box center points should be
+            as a fraction of `steps`. The last bit is important: The offsets are not absolute pixel values,but fractions
             of the step size specified in the `steps` argument. If the list contains floats, then that value will
             be used for both spatial dimensions. If the list contains tuples of two floats, then they represent
-            `(vertical_offset, horizontal_offset)`. If no offsets are provided, then they will default to 0.5 of the step size.
+            `(vertical_offset, horizontal_offset)`. If no offsets are provided, then they will default to 0.5 of
+            the step size.
         clip_boxes (bool, optional): If `True`, clips the anchor box coordinates to stay within image boundaries.
         variances (list, optional): A list of 4 floats >0. The anchor box offset for each coordinate will be divided by
             its respective variance value.
-        coords (str, optional): The box coordinate format to be used internally by the model (i.e. this is not the input format
-            of the ground truth labels). Can be either 'centroids' for the format `(cx, cy, w, h)` (box center coordinates, width,
-            and height), 'minmax' for the format `(xmin, xmax, ymin, ymax)`, or 'corners' for the format `(xmin, ymin, xmax, ymax)`.
-        normalize_coords (bool, optional): Set to `True` if the model is supposed to use relative instead of absolute coordinates,
-            i.e. if the model predicts box coordinates within [0,1] instead of absolute coordinates.
+        coords (str, optional): The box coordinate format to be used internally by the model (i.e. this is not
+            the input format of the ground truth labels). Can be either 'centroids' for the format `(cx, cy, w, h)`
+            (box center coordinates, width, and height), 'minmax' for the format `(xmin, xmax, ymin, ymax)`,
+            or 'corners' for the format `(xmin, ymin, xmax, ymax)`.
+        normalize_coords (bool, optional): Set to `True` if the model is supposed to use relative instead of absolute
+             coordinates, i.e. if the model predicts box coordinates within [0,1] instead of absolute coordinates.
         subtract_mean (array-like, optional): `None` or an array-like object of integers or floating point values
             of any shape that is broadcast-compatible with the image shape. The elements of this array will be
             subtracted from the image pixel intensity values. For example, pass a list of three integers
@@ -141,19 +145,19 @@ def ssd_512(image_size,
             floating point values of any shape that is broadcast-compatible with the image shape. The image pixel
             intensity values will be divided by the elements of this array. For example, pass a list
             of three integers to perform per-channel standard deviation normalization for color images.
-        swap_channels (list, optional): Either `False` or a list of integers representing the desired order in which the input
-            image channels should be swapped.
+        swap_channels (list, optional): Either `False` or a list of integers representing the desired order in which
+            the input image channels should be swapped.
         confidence_thresh (float, optional): A float in [0,1), the minimum classification confidence in a specific
             positive class in order to be considered for the non-maximum suppression stage for the respective class.
-            A lower value will result in a larger part of the selection process being done by the non-maximum suppression
-            stage, while a larger value will result in a larger part of the selection process happening in the confidence
-            thresholding stage.
-        iou_threshold (float, optional): A float in [0,1]. All boxes that have a Jaccard similarity of greater than `iou_threshold`
-            with a locally maximal box will be removed from the set of predictions for a given class, where 'maximal' refers
-            to the box's confidence score.
+            A lower value will result in larger part of the selection process being done by the non-maximum suppression
+            stage, while a larger value will result in a larger part of the selection process happening in the
+            confidence thresholding stage.
+        iou_threshold (float, optional): A float in [0,1]. All boxes that have a Jaccard similarity of greater than
+            `iou_threshold` with a locally maximal box will be removed from the set of predictions for a given class,
+            where 'maximal' refers to the box's confidence score.
         top_k (int, optional): The number of highest scoring predictions to be kept for each batch item after the
             non-maximum suppression stage.
-        nms_max_output_size (int, optional): The maximal number of predictions that will be left over after the NMS stage.
+        nms_max_output_size (int,optional):The maximal number of predictions that will be left over after the NMS stage.
         return_predictor_sizes (bool, optional): If `True`, this function not only returns the model, but also
             a list containing the spatial dimensions of the predictor layers. This isn't strictly necessary since
             you can always get their sizes easily via the Keras API, but it's convenient and less error-prone
@@ -173,9 +177,9 @@ def ssd_512(image_size,
         https://arxiv.org/abs/1512.02325v5
     '''
 
-    n_predictor_layers = 7 # The number of predictor conv layers in the network is 7 for the original SSD512
-    n_classes += 1 # Account for the background class.
-    l2_reg = l2_regularization # Make the internal name shorter.
+    n_predictor_layers = 7  # The number of predictor conv layers in the network is 7 for the original SSD512
+    n_classes += 1  # Account for the background class.
+    l2_reg = l2_regularization  # Make the internal name shorter.
     img_height, img_width, img_channels = image_size[0], image_size[1], image_size[2]
 
     ############################################################################
@@ -183,17 +187,23 @@ def ssd_512(image_size,
     ############################################################################
 
     if aspect_ratios_global is None and aspect_ratios_per_layer is None:
-        raise ValueError("`aspect_ratios_global` and `aspect_ratios_per_layer` cannot both be None. At least one needs to be specified.")
+        raise ValueError("`aspect_ratios_global` and `aspect_ratios_per_layer` \
+                            cannot both be None. At least one needs to be specified.")
     if aspect_ratios_per_layer:
         if len(aspect_ratios_per_layer) != n_predictor_layers:
-            raise ValueError("It must be either aspect_ratios_per_layer is None or len(aspect_ratios_per_layer) == {}, but len(aspect_ratios_per_layer) == {}.".format(n_predictor_layers, len(aspect_ratios_per_layer)))
+            raise ValueError("It must be either aspect_ratios_per_layer is None or len(aspect_ratios_per_layer) == {}, \
+                              but len(aspect_ratios_per_layer) == {}.".format(n_predictor_layers,
+                                                                              len(aspect_ratios_per_layer)))
 
     if (min_scale is None or max_scale is None) and scales is None:
         raise ValueError("Either `min_scale` and `max_scale` or `scales` need to be specified.")
     if scales:
         if len(scales) != n_predictor_layers+1:
-            raise ValueError("It must be either scales is None or len(scales) == {}, but len(scales) == {}.".format(n_predictor_layers+1, len(scales)))
-    else: # If no explicit list of scaling factors was passed, compute the list of scaling factors from `min_scale` and `max_scale`
+            raise ValueError("It must be either scales is None or len(scales) == {}, \
+                              but len(scales) == {}.".format(n_predictor_layers+1, len(scales)))
+    # If no explicit list of scaling factors was passed,
+    # compute the list of scaling factors from `min_scale` and `max_scale`
+    else:
         scales = np.linspace(min_scale, max_scale, n_predictor_layers+1)
 
     if len(variances) != 4:
@@ -224,10 +234,11 @@ def ssd_512(image_size,
         n_boxes = []
         for ar in aspect_ratios_per_layer:
             if (1 in ar) & two_boxes_for_ar1:
-                n_boxes.append(len(ar) + 1) # +1 for the second box for aspect ratio 1
+                n_boxes.append(len(ar) + 1)  # +1 for the second box for aspect ratio 1
             else:
                 n_boxes.append(len(ar))
-    else: # If only a global aspect ratio list was passed, then the number of boxes is the same for each predictor layer
+    # If only a global aspect ratio list was passed, then the number of boxes is the same for each predictor layer
+    else:
         if (1 in aspect_ratios_global) & two_boxes_for_ar1:
             n_boxes = len(aspect_ratios_global) + 1
         else:
@@ -254,126 +265,215 @@ def ssd_512(image_size,
 
     def input_channel_swap(tensor):
         if len(swap_channels) == 3:
-            return K.stack([tensor[...,swap_channels[0]], tensor[...,swap_channels[1]], tensor[...,swap_channels[2]]], axis=-1)
+            return K.stack([tensor[..., swap_channels[0]], tensor[..., swap_channels[1]],
+                            tensor[..., swap_channels[2]]], axis=-1)
         elif len(swap_channels) == 4:
-            return K.stack([tensor[...,swap_channels[0]], tensor[...,swap_channels[1]], tensor[...,swap_channels[2]], tensor[...,swap_channels[3]]], axis=-1)
+            return K.stack([tensor[..., swap_channels[0]], tensor[..., swap_channels[1]],
+                            tensor[..., swap_channels[2]], tensor[..., swap_channels[3]]], axis=-1)
 
     ############################################################################
     # Build the network.
     ############################################################################
-
-    x = Input(shape=(img_height, img_width, img_channels))
+    x_source = Input(shape=(img_height, img_width, img_channels))
+    x_target = Input(shape=(img_height, img_width, img_channels))
+    x = Concatenate(axis=0, name='input')([x_source, x_target])
 
     # The following identity layer is only needed so that the subsequent lambda layers can be optional.
     x1 = Lambda(identity_layer, output_shape=(img_height, img_width, img_channels), name='identity_layer')(x)
     if not (subtract_mean is None):
-        x1 = Lambda(input_mean_normalization, output_shape=(img_height, img_width, img_channels), name='input_mean_normalization')(x1)
+        x1 = Lambda(input_mean_normalization, output_shape=(img_height, img_width, img_channels),
+                    name='input_mean_normalization')(x1)
     if not (divide_by_stddev is None):
-        x1 = Lambda(input_stddev_normalization, output_shape=(img_height, img_width, img_channels), name='input_stddev_normalization')(x1)
+        x1 = Lambda(input_stddev_normalization, output_shape=(img_height, img_width, img_channels),
+                    name='input_stddev_normalization')(x1)
     if swap_channels:
-        x1 = Lambda(input_channel_swap, output_shape=(img_height, img_width, img_channels), name='input_channel_swap')(x1)
+        x1 = Lambda(input_channel_swap, output_shape=(img_height, img_width, img_channels),
+                    name='input_channel_swap')(x1)
 
-    conv1_1 = Conv2D(64, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv1_1')(x1)
-    conv1_2 = Conv2D(64, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv1_2')(conv1_1)
+    predicted_output = []
+    batch_size = tf.shape(x_source)[0]
+
+    conv1_1 = Conv2D(64, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal',
+                     kernel_regularizer=l2(l2_reg), name='conv1_1')(x1)
+    conv1_2 = Conv2D(64, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal',
+                     kernel_regularizer=l2(l2_reg), name='conv1_2')(conv1_1)
     pool1 = MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same', name='pool1')(conv1_2)
 
-    conv2_1 = Conv2D(128, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv2_1')(pool1)
-    conv2_2 = Conv2D(128, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv2_2')(conv2_1)
+    pool1_source = Lambda(lambda pool1: pool1[:batch_size, :, :, :])(pool1)
+    pool1_target = Lambda(lambda pool1: pool1[batch_size:, :, :, :])(pool1)
+    pool1_source_global_pool = GlobalAveragePooling2D()(pool1_source)
+    pool1_target_global_pool = GlobalAveragePooling2D()(pool1_target)
+    pool1_source_substract_target = Subtract(name='pool1_GAP_substract')([pool1_source_global_pool,
+                                                                          pool1_target_global_pool])
+    predicted_output.append(pool1_source_substract_target)
+
+    conv2_1 = Conv2D(128, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal',
+                     kernel_regularizer=l2(l2_reg), name='conv2_1')(pool1)
+    conv2_2 = Conv2D(128, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal',
+                     kernel_regularizer=l2(l2_reg), name='conv2_2')(conv2_1)
     pool2 = MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same', name='pool2')(conv2_2)
 
-    conv3_1 = Conv2D(256, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv3_1')(pool2)
-    conv3_2 = Conv2D(256, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv3_2')(conv3_1)
-    conv3_3 = Conv2D(256, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv3_3')(conv3_2)
+    pool2_source = Lambda(lambda pool2: pool2[:batch_size, :, :, :])(pool2)
+    pool2_target = Lambda(lambda pool2: pool2[batch_size:, :, :, :])(pool2)
+    pool2_source_global_pool = GlobalAveragePooling2D()(pool2_source)
+    pool2_target_global_pool = GlobalAveragePooling2D()(pool2_target)
+    pool2_source_substract_target = Subtract(name='pool2_GAP_substract')([pool2_source_global_pool,
+                                                                          pool2_target_global_pool])
+    predicted_output.append(pool2_source_substract_target)
+
+    conv3_1 = Conv2D(256, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal',
+                     kernel_regularizer=l2(l2_reg), name='conv3_1')(pool2)
+    conv3_2 = Conv2D(256, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal',
+                     kernel_regularizer=l2(l2_reg), name='conv3_2')(conv3_1)
+    conv3_3 = Conv2D(256, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal',
+                     kernel_regularizer=l2(l2_reg), name='conv3_3')(conv3_2)
     pool3 = MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same', name='pool3')(conv3_3)
 
-    conv4_1 = Conv2D(512, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv4_1')(pool3)
-    conv4_2 = Conv2D(512, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv4_2')(conv4_1)
-    conv4_3 = Conv2D(512, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv4_3')(conv4_2)
+    pool3_source = Lambda(lambda pool3: pool3[:batch_size, :, :, :])(pool3)
+    pool3_target = Lambda(lambda pool3: pool3[batch_size:, :, :, :])(pool3)
+    pool3_source_global_pool = GlobalAveragePooling2D()(pool3_source)
+    pool3_target_global_pool = GlobalAveragePooling2D()(pool3_target)
+    pool3_source_substract_target = Subtract(name='pool3_GAP_substract')([pool3_source_global_pool,
+                                                                          pool3_target_global_pool])
+    predicted_output.append(pool3_source_substract_target)
+
+    conv4_1 = Conv2D(512, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal',
+                     kernel_regularizer=l2(l2_reg), name='conv4_1')(pool3_source)  # Important! (pool3)
+    conv4_2 = Conv2D(512, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal',
+                     kernel_regularizer=l2(l2_reg), name='conv4_2')(conv4_1)
+    conv4_3 = Conv2D(512, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal',
+                     kernel_regularizer=l2(l2_reg), name='conv4_3')(conv4_2)
     pool4 = MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same', name='pool4')(conv4_3)
 
-    conv5_1 = Conv2D(512, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv5_1')(pool4)
-    conv5_2 = Conv2D(512, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv5_2')(conv5_1)
-    conv5_3 = Conv2D(512, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv5_3')(conv5_2)
+    conv5_1 = Conv2D(512, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal',
+                     kernel_regularizer=l2(l2_reg), name='conv5_1')(pool4)
+    conv5_2 = Conv2D(512, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal',
+                     kernel_regularizer=l2(l2_reg), name='conv5_2')(conv5_1)
+    conv5_3 = Conv2D(512, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal',
+                     kernel_regularizer=l2(l2_reg), name='conv5_3')(conv5_2)
     pool5 = MaxPooling2D(pool_size=(3, 3), strides=(1, 1), padding='same', name='pool5')(conv5_3)
 
-    fc6 = Conv2D(1024, (3, 3), dilation_rate=(6, 6), activation='relu', padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='fc6')(pool5)
+    fc6 = Conv2D(1024, (3, 3), dilation_rate=(6, 6), activation='relu', padding='same', kernel_initializer='he_normal',
+                 kernel_regularizer=l2(l2_reg), name='fc6')(pool5)
 
-    fc7 = Conv2D(1024, (1, 1), activation='relu', padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='fc7')(fc6)
+    fc7 = Conv2D(1024, (1, 1), activation='relu', padding='same', kernel_initializer='he_normal',
+                 kernel_regularizer=l2(l2_reg), name='fc7')(fc6)
 
-    conv6_1 = Conv2D(256, (1, 1), activation='relu', padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv6_1')(fc7)
+    conv6_1 = Conv2D(256, (1, 1), activation='relu', padding='same', kernel_initializer='he_normal',
+                     kernel_regularizer=l2(l2_reg), name='conv6_1')(fc7)
     conv6_1 = ZeroPadding2D(padding=((1, 1), (1, 1)), name='conv6_padding')(conv6_1)
-    conv6_2 = Conv2D(512, (3, 3), strides=(2, 2), activation='relu', padding='valid', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv6_2')(conv6_1)
+    conv6_2 = Conv2D(512, (3, 3), strides=(2, 2), activation='relu', padding='valid', kernel_initializer='he_normal',
+                     kernel_regularizer=l2(l2_reg), name='conv6_2')(conv6_1)
 
-    conv7_1 = Conv2D(128, (1, 1), activation='relu', padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv7_1')(conv6_2)
+    conv7_1 = Conv2D(128, (1, 1), activation='relu', padding='same', kernel_initializer='he_normal',
+                     kernel_regularizer=l2(l2_reg), name='conv7_1')(conv6_2)
     conv7_1 = ZeroPadding2D(padding=((1, 1), (1, 1)), name='conv7_padding')(conv7_1)
-    conv7_2 = Conv2D(256, (3, 3), strides=(2, 2), activation='relu', padding='valid', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv7_2')(conv7_1)
+    conv7_2 = Conv2D(256, (3, 3), strides=(2, 2), activation='relu', padding='valid', kernel_initializer='he_normal',
+                     kernel_regularizer=l2(l2_reg), name='conv7_2')(conv7_1)
 
-    conv8_1 = Conv2D(128, (1, 1), activation='relu', padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv8_1')(conv7_2)
+    conv8_1 = Conv2D(128, (1, 1), activation='relu', padding='same', kernel_initializer='he_normal',
+                     kernel_regularizer=l2(l2_reg), name='conv8_1')(conv7_2)
     conv8_1 = ZeroPadding2D(padding=((1, 1), (1, 1)), name='conv8_padding')(conv8_1)
-    conv8_2 = Conv2D(256, (3, 3), strides=(2, 2), activation='relu', padding='valid', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv8_2')(conv8_1)
+    conv8_2 = Conv2D(256, (3, 3), strides=(2, 2), activation='relu', padding='valid', kernel_initializer='he_normal',
+                     kernel_regularizer=l2(l2_reg), name='conv8_2')(conv8_1)
 
-    conv9_1 = Conv2D(128, (1, 1), activation='relu', padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv9_1')(conv8_2)
+    conv9_1 = Conv2D(128, (1, 1), activation='relu', padding='same', kernel_initializer='he_normal',
+                     kernel_regularizer=l2(l2_reg), name='conv9_1')(conv8_2)
     conv9_1 = ZeroPadding2D(padding=((1, 1), (1, 1)), name='conv9_padding')(conv9_1)
-    conv9_2 = Conv2D(256, (3, 3), strides=(2, 2), activation='relu', padding='valid', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv9_2')(conv9_1)
+    conv9_2 = Conv2D(256, (3, 3), strides=(2, 2), activation='relu', padding='valid', kernel_initializer='he_normal',
+                     kernel_regularizer=l2(l2_reg), name='conv9_2')(conv9_1)
 
-    conv10_1 = Conv2D(128, (1, 1), activation='relu', padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv10_1')(conv9_2)
+    conv10_1 = Conv2D(128, (1, 1), activation='relu', padding='same', kernel_initializer='he_normal',
+                      kernel_regularizer=l2(l2_reg), name='conv10_1')(conv9_2)
     conv10_1 = ZeroPadding2D(padding=((1, 1), (1, 1)), name='conv10_padding')(conv10_1)
-    conv10_2 = Conv2D(256, (4, 4), strides=(1, 1), activation='relu', padding='valid', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv10_2')(conv10_1)
+    conv10_2 = Conv2D(256, (4, 4), strides=(1, 1), activation='relu', padding='valid', kernel_initializer='he_normal',
+                      kernel_regularizer=l2(l2_reg), name='conv10_2')(conv10_1)
 
     # Feed conv4_3 into the L2 normalization layer
     conv4_3_norm = L2Normalization(gamma_init=20, name='conv4_3_norm')(conv4_3)
 
-    ### Build the convolutional predictor layers on top of the base network
+    # Build the convolutional predictor layers on top of the base network
 
-    # We precidt `n_classes` confidence values for each box, hence the confidence predictors have depth `n_boxes * n_classes`
+    # We precidt `n_classes` confidence values for each box,
+    # hence the confidence predictors have depth `n_boxes * n_classes`
     # Output shape of the confidence layers: `(batch, height, width, n_boxes * n_classes)`
-    conv4_3_norm_mbox_conf = Conv2D(n_boxes[0] * n_classes, (3, 3), padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv4_3_norm_mbox_conf')(conv4_3_norm)
-    fc7_mbox_conf = Conv2D(n_boxes[1] * n_classes, (3, 3), padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='fc7_mbox_conf')(fc7)
-    conv6_2_mbox_conf = Conv2D(n_boxes[2] * n_classes, (3, 3), padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv6_2_mbox_conf')(conv6_2)
-    conv7_2_mbox_conf = Conv2D(n_boxes[3] * n_classes, (3, 3), padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv7_2_mbox_conf')(conv7_2)
-    conv8_2_mbox_conf = Conv2D(n_boxes[4] * n_classes, (3, 3), padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv8_2_mbox_conf')(conv8_2)
-    conv9_2_mbox_conf = Conv2D(n_boxes[5] * n_classes, (3, 3), padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv9_2_mbox_conf')(conv9_2)
-    conv10_2_mbox_conf = Conv2D(n_boxes[6] * n_classes, (3, 3), padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv10_2_mbox_conf')(conv10_2)
+    conv4_3_norm_mbox_conf = Conv2D(n_boxes[0] * n_classes, (3, 3), padding='same', kernel_initializer='he_normal',
+                                    kernel_regularizer=l2(l2_reg), name='conv4_3_norm_mbox_conf')(conv4_3_norm)
+    fc7_mbox_conf = Conv2D(n_boxes[1] * n_classes, (3, 3), padding='same', kernel_initializer='he_normal',
+                           kernel_regularizer=l2(l2_reg), name='fc7_mbox_conf')(fc7)
+    conv6_2_mbox_conf = Conv2D(n_boxes[2] * n_classes, (3, 3), padding='same', kernel_initializer='he_normal',
+                               kernel_regularizer=l2(l2_reg), name='conv6_2_mbox_conf')(conv6_2)
+    conv7_2_mbox_conf = Conv2D(n_boxes[3] * n_classes, (3, 3), padding='same', kernel_initializer='he_normal',
+                               kernel_regularizer=l2(l2_reg), name='conv7_2_mbox_conf')(conv7_2)
+    conv8_2_mbox_conf = Conv2D(n_boxes[4] * n_classes, (3, 3), padding='same', kernel_initializer='he_normal',
+                               kernel_regularizer=l2(l2_reg), name='conv8_2_mbox_conf')(conv8_2)
+    conv9_2_mbox_conf = Conv2D(n_boxes[5] * n_classes, (3, 3), padding='same', kernel_initializer='he_normal',
+                               kernel_regularizer=l2(l2_reg), name='conv9_2_mbox_conf')(conv9_2)
+    conv10_2_mbox_conf = Conv2D(n_boxes[6] * n_classes, (3, 3), padding='same', kernel_initializer='he_normal',
+                                kernel_regularizer=l2(l2_reg), name='conv10_2_mbox_conf')(conv10_2)
     # We predict 4 box coordinates for each box, hence the localization predictors have depth `n_boxes * 4`
     # Output shape of the localization layers: `(batch, height, width, n_boxes * 4)`
-    conv4_3_norm_mbox_loc = Conv2D(n_boxes[0] * 4, (3, 3), padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv4_3_norm_mbox_loc')(conv4_3_norm)
-    fc7_mbox_loc = Conv2D(n_boxes[1] * 4, (3, 3), padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='fc7_mbox_loc')(fc7)
-    conv6_2_mbox_loc = Conv2D(n_boxes[2] * 4, (3, 3), padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv6_2_mbox_loc')(conv6_2)
-    conv7_2_mbox_loc = Conv2D(n_boxes[3] * 4, (3, 3), padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv7_2_mbox_loc')(conv7_2)
-    conv8_2_mbox_loc = Conv2D(n_boxes[4] * 4, (3, 3), padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv8_2_mbox_loc')(conv8_2)
-    conv9_2_mbox_loc = Conv2D(n_boxes[5] * 4, (3, 3), padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv9_2_mbox_loc')(conv9_2)
-    conv10_2_mbox_loc = Conv2D(n_boxes[6] * 4, (3, 3), padding='same', kernel_initializer='he_normal', kernel_regularizer=l2(l2_reg), name='conv10_2_mbox_loc')(conv10_2)
+    conv4_3_norm_mbox_loc = Conv2D(n_boxes[0] * 4, (3, 3), padding='same', kernel_initializer='he_normal',
+                                   kernel_regularizer=l2(l2_reg), name='conv4_3_norm_mbox_loc')(conv4_3_norm)
+    fc7_mbox_loc = Conv2D(n_boxes[1] * 4, (3, 3), padding='same', kernel_initializer='he_normal',
+                          kernel_regularizer=l2(l2_reg), name='fc7_mbox_loc')(fc7)
+    conv6_2_mbox_loc = Conv2D(n_boxes[2] * 4, (3, 3), padding='same', kernel_initializer='he_normal',
+                              kernel_regularizer=l2(l2_reg), name='conv6_2_mbox_loc')(conv6_2)
+    conv7_2_mbox_loc = Conv2D(n_boxes[3] * 4, (3, 3), padding='same', kernel_initializer='he_normal',
+                              kernel_regularizer=l2(l2_reg), name='conv7_2_mbox_loc')(conv7_2)
+    conv8_2_mbox_loc = Conv2D(n_boxes[4] * 4, (3, 3), padding='same', kernel_initializer='he_normal',
+                              kernel_regularizer=l2(l2_reg), name='conv8_2_mbox_loc')(conv8_2)
+    conv9_2_mbox_loc = Conv2D(n_boxes[5] * 4, (3, 3), padding='same', kernel_initializer='he_normal',
+                              kernel_regularizer=l2(l2_reg), name='conv9_2_mbox_loc')(conv9_2)
+    conv10_2_mbox_loc = Conv2D(n_boxes[6] * 4, (3, 3), padding='same', kernel_initializer='he_normal',
+                               kernel_regularizer=l2(l2_reg), name='conv10_2_mbox_loc')(conv10_2)
 
-    ### Generate the anchor boxes (called "priors" in the original Caffe/C++ implementation, so I'll keep their layer names)
+    # Generate the anchor boxes (called "priors" in the original Caffe/C++ implementation,
+    # so I'll keep their layer names)
 
     # Output shape of anchors: `(batch, height, width, n_boxes, 8)`
-    conv4_3_norm_mbox_priorbox = AnchorBoxes(img_height, img_width, this_scale=scales[0], next_scale=scales[1], aspect_ratios=aspect_ratios[0],
-                                             two_boxes_for_ar1=two_boxes_for_ar1, this_steps=steps[0], this_offsets=offsets[0], clip_boxes=clip_boxes,
-                                             variances=variances, coords=coords, normalize_coords=normalize_coords, name='conv4_3_norm_mbox_priorbox')(conv4_3_norm_mbox_loc)
-    fc7_mbox_priorbox = AnchorBoxes(img_height, img_width, this_scale=scales[1], next_scale=scales[2], aspect_ratios=aspect_ratios[1],
-                                    two_boxes_for_ar1=two_boxes_for_ar1, this_steps=steps[1], this_offsets=offsets[1], clip_boxes=clip_boxes,
-                                    variances=variances, coords=coords, normalize_coords=normalize_coords, name='fc7_mbox_priorbox')(fc7_mbox_loc)
-    conv6_2_mbox_priorbox = AnchorBoxes(img_height, img_width, this_scale=scales[2], next_scale=scales[3], aspect_ratios=aspect_ratios[2],
-                                        two_boxes_for_ar1=two_boxes_for_ar1, this_steps=steps[2], this_offsets=offsets[2], clip_boxes=clip_boxes,
-                                        variances=variances, coords=coords, normalize_coords=normalize_coords, name='conv6_2_mbox_priorbox')(conv6_2_mbox_loc)
-    conv7_2_mbox_priorbox = AnchorBoxes(img_height, img_width, this_scale=scales[3], next_scale=scales[4], aspect_ratios=aspect_ratios[3],
-                                        two_boxes_for_ar1=two_boxes_for_ar1, this_steps=steps[3], this_offsets=offsets[3], clip_boxes=clip_boxes,
-                                        variances=variances, coords=coords, normalize_coords=normalize_coords, name='conv7_2_mbox_priorbox')(conv7_2_mbox_loc)
-    conv8_2_mbox_priorbox = AnchorBoxes(img_height, img_width, this_scale=scales[4], next_scale=scales[5], aspect_ratios=aspect_ratios[4],
-                                        two_boxes_for_ar1=two_boxes_for_ar1, this_steps=steps[4], this_offsets=offsets[4], clip_boxes=clip_boxes,
-                                        variances=variances, coords=coords, normalize_coords=normalize_coords, name='conv8_2_mbox_priorbox')(conv8_2_mbox_loc)
-    conv9_2_mbox_priorbox = AnchorBoxes(img_height, img_width, this_scale=scales[5], next_scale=scales[6], aspect_ratios=aspect_ratios[5],
-                                        two_boxes_for_ar1=two_boxes_for_ar1, this_steps=steps[5], this_offsets=offsets[5], clip_boxes=clip_boxes,
-                                        variances=variances, coords=coords, normalize_coords=normalize_coords, name='conv9_2_mbox_priorbox')(conv9_2_mbox_loc)
-    conv10_2_mbox_priorbox = AnchorBoxes(img_height, img_width, this_scale=scales[6], next_scale=scales[7], aspect_ratios=aspect_ratios[6],
-                                        two_boxes_for_ar1=two_boxes_for_ar1, this_steps=steps[6], this_offsets=offsets[6], clip_boxes=clip_boxes,
-                                        variances=variances, coords=coords, normalize_coords=normalize_coords, name='conv10_2_mbox_priorbox')(conv10_2_mbox_loc)
+    conv4_3_norm_mbox_priorbox = AnchorBoxes(img_height, img_width, this_scale=scales[0], next_scale=scales[1],
+                                             aspect_ratios=aspect_ratios[0], two_boxes_for_ar1=two_boxes_for_ar1,
+                                             this_steps=steps[0], this_offsets=offsets[0], clip_boxes=clip_boxes,
+                                             variances=variances, coords=coords, normalize_coords=normalize_coords,
+                                             name='conv4_3_norm_mbox_priorbox')(conv4_3_norm_mbox_loc)
+    fc7_mbox_priorbox = AnchorBoxes(img_height, img_width, this_scale=scales[1], next_scale=scales[2],
+                                    aspect_ratios=aspect_ratios[1], two_boxes_for_ar1=two_boxes_for_ar1,
+                                    this_steps=steps[1], this_offsets=offsets[1], clip_boxes=clip_boxes,
+                                    variances=variances, coords=coords, normalize_coords=normalize_coords,
+                                    name='fc7_mbox_priorbox')(fc7_mbox_loc)
+    conv6_2_mbox_priorbox = AnchorBoxes(img_height, img_width, this_scale=scales[2], next_scale=scales[3],
+                                        aspect_ratios=aspect_ratios[2], two_boxes_for_ar1=two_boxes_for_ar1,
+                                        this_steps=steps[2], this_offsets=offsets[2], clip_boxes=clip_boxes,
+                                        variances=variances, coords=coords, normalize_coords=normalize_coords,
+                                        name='conv6_2_mbox_priorbox')(conv6_2_mbox_loc)
+    conv7_2_mbox_priorbox = AnchorBoxes(img_height, img_width, this_scale=scales[3], next_scale=scales[4],
+                                        aspect_ratios=aspect_ratios[3], two_boxes_for_ar1=two_boxes_for_ar1,
+                                        this_steps=steps[3], this_offsets=offsets[3], clip_boxes=clip_boxes,
+                                        variances=variances, coords=coords, normalize_coords=normalize_coords,
+                                        name='conv7_2_mbox_priorbox')(conv7_2_mbox_loc)
+    conv8_2_mbox_priorbox = AnchorBoxes(img_height, img_width, this_scale=scales[4], next_scale=scales[5],
+                                        aspect_ratios=aspect_ratios[4], two_boxes_for_ar1=two_boxes_for_ar1,
+                                        this_steps=steps[4], this_offsets=offsets[4], clip_boxes=clip_boxes,
+                                        variances=variances, coords=coords, normalize_coords=normalize_coords,
+                                        name='conv8_2_mbox_priorbox')(conv8_2_mbox_loc)
+    conv9_2_mbox_priorbox = AnchorBoxes(img_height, img_width, this_scale=scales[5], next_scale=scales[6],
+                                        aspect_ratios=aspect_ratios[5], two_boxes_for_ar1=two_boxes_for_ar1,
+                                        this_steps=steps[5], this_offsets=offsets[5], clip_boxes=clip_boxes,
+                                        variances=variances, coords=coords, normalize_coords=normalize_coords,
+                                        name='conv9_2_mbox_priorbox')(conv9_2_mbox_loc)
+    conv10_2_mbox_priorbox = AnchorBoxes(img_height, img_width, this_scale=scales[6], next_scale=scales[7],
+                                         aspect_ratios=aspect_ratios[6], two_boxes_for_ar1=two_boxes_for_ar1,
+                                         this_steps=steps[6], this_offsets=offsets[6], clip_boxes=clip_boxes,
+                                         variances=variances, coords=coords, normalize_coords=normalize_coords,
+                                         name='conv10_2_mbox_priorbox')(conv10_2_mbox_loc)
 
-    ### Reshape
+    # Reshape
 
     # Reshape the class predictions, yielding 3D tensors of shape `(batch, height * width * n_boxes, n_classes)`
     # We want the classes isolated in the last axis to perform softmax on them
-    conv4_3_norm_mbox_conf_reshape = Reshape((-1, n_classes), name='conv4_3_norm_mbox_conf_reshape')(conv4_3_norm_mbox_conf)
+    conv4_3_norm_mbox_conf_reshape = Reshape((-1, n_classes),
+                                             name='conv4_3_norm_mbox_conf_reshape')(conv4_3_norm_mbox_conf)
     fc7_mbox_conf_reshape = Reshape((-1, n_classes), name='fc7_mbox_conf_reshape')(fc7_mbox_conf)
     conv6_2_mbox_conf_reshape = Reshape((-1, n_classes), name='conv6_2_mbox_conf_reshape')(conv6_2_mbox_conf)
     conv7_2_mbox_conf_reshape = Reshape((-1, n_classes), name='conv7_2_mbox_conf_reshape')(conv7_2_mbox_conf)
@@ -390,7 +490,8 @@ def ssd_512(image_size,
     conv9_2_mbox_loc_reshape = Reshape((-1, 4), name='conv9_2_mbox_loc_reshape')(conv9_2_mbox_loc)
     conv10_2_mbox_loc_reshape = Reshape((-1, 4), name='conv10_2_mbox_loc_reshape')(conv10_2_mbox_loc)
     # Reshape the anchor box tensors, yielding 3D tensors of shape `(batch, height * width * n_boxes, 8)`
-    conv4_3_norm_mbox_priorbox_reshape = Reshape((-1, 8), name='conv4_3_norm_mbox_priorbox_reshape')(conv4_3_norm_mbox_priorbox)
+    conv4_3_norm_mbox_priorbox_reshape = Reshape((-1, 8),
+                                                 name='conv4_3_norm_mbox_priorbox_reshape')(conv4_3_norm_mbox_priorbox)
     fc7_mbox_priorbox_reshape = Reshape((-1, 8), name='fc7_mbox_priorbox_reshape')(fc7_mbox_priorbox)
     conv6_2_mbox_priorbox_reshape = Reshape((-1, 8), name='conv6_2_mbox_priorbox_reshape')(conv6_2_mbox_priorbox)
     conv7_2_mbox_priorbox_reshape = Reshape((-1, 8), name='conv7_2_mbox_priorbox_reshape')(conv7_2_mbox_priorbox)
@@ -398,7 +499,7 @@ def ssd_512(image_size,
     conv9_2_mbox_priorbox_reshape = Reshape((-1, 8), name='conv9_2_mbox_priorbox_reshape')(conv9_2_mbox_priorbox)
     conv10_2_mbox_priorbox_reshape = Reshape((-1, 8), name='conv10_2_mbox_priorbox_reshape')(conv10_2_mbox_priorbox)
 
-    ### Concatenate the predictions from the different layers
+    # Concatenate the predictions from the different layers
 
     # Axis 0 (batch) and axis 2 (n_classes or 4, respectively) are identical for all layer predictions,
     # so we want to concatenate along axis 1, the number of boxes per layer
@@ -436,9 +537,10 @@ def ssd_512(image_size,
     # Concatenate the class and box predictions and the anchors to one large predictions vector
     # Output shape of `predictions`: (batch, n_boxes_total, n_classes + 4 + 8)
     predictions = Concatenate(axis=2, name='predictions')([mbox_conf_softmax, mbox_loc, mbox_priorbox])
+    predicted_output.append(predictions)
 
     if mode == 'training':
-        model = Model(inputs=x, outputs=predictions)
+        model = Model(inputs=[x_source, x_target], outputs=predicted_output)
     elif mode == 'inference':
         decoded_predictions = DecodeDetections(confidence_thresh=confidence_thresh,
                                                iou_threshold=iou_threshold,
@@ -449,7 +551,7 @@ def ssd_512(image_size,
                                                img_height=img_height,
                                                img_width=img_width,
                                                name='decoded_predictions')(predictions)
-        model = Model(inputs=x, outputs=decoded_predictions)
+        model = Model(inputs=[x_source, x_target], outputs=decoded_predictions)
     elif mode == 'inference_fast':
         decoded_predictions = DecodeDetectionsFast(confidence_thresh=confidence_thresh,
                                                    iou_threshold=iou_threshold,
@@ -460,7 +562,7 @@ def ssd_512(image_size,
                                                    img_height=img_height,
                                                    img_width=img_width,
                                                    name='decoded_predictions')(predictions)
-        model = Model(inputs=x, outputs=decoded_predictions)
+        model = Model(inputs=[x_source, x_target], outputs=decoded_predictions)
     else:
         raise ValueError("`mode` must be one of 'training', 'inference' or 'inference_fast', but received '{}'.".format(mode))
 
