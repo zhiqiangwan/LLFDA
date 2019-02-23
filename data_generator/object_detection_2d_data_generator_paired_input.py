@@ -83,25 +83,19 @@ class DataGenerator:
                  load_images_into_memory=False,
                  hdf5_dataset_path=None,
                  filenames=None,
-                 target_filenames=None,
                  filenames_type='text',
                  images_dir=None,
-                 target_images_dir=None,
                  labels=None,
                  image_ids=None,
-                 target_image_ids=None,
                  eval_neutral=None,
                  labels_output_format=('class_id', 'xmin', 'ymin', 'xmax', 'ymax'),
                  verbose=True):
         '''
-        Initializes the data generator.
-        You can directly provide image path and labels via (images_dir, filenames, image_ids, labels). If these virables
-        are not provided, you need to use the parser to get image path and labels.
-        There are two ways to load the dataset. 1. If load_images_into_memory=True, dataset will be directly loaded from
-        image path into the memory. 2. If hdf5_dataset_path is provided, dataset will be loaded from h5 file.
+        Initializes the data generator. You can either load a dataset directly here in the constructor,
+        e.g. an HDF5 dataset, or you can use one of the parser methods to read in a dataset.
 
         Arguments:
-            dataset: 'train' or 'val'. If 'train', you need to provide target domain dataset.
+            dataset: 'train' or 'val'
             load_images_into_memory (bool, optional): If `True`, the entire dataset will be loaded into memory.
                 This enables noticeably faster data generation than loading batches of images into memory ad hoc.
                 Be sure that you have enough memory before you activate this option.
@@ -109,7 +103,7 @@ class DataGenerator:
                 format that the `create_hdf5_dataset()` method produces. If you load such an HDF5 dataset, you
                 don't need to use any of the parser methods anymore, the HDF5 dataset already contains all relevant
                 data.
-            filenames and target_filenames (string or list, optional): `None` or either a Python list/tuple or a string representing
+            filenames (string or list, optional): `None` or either a Python list/tuple or a string representing
                 a filepath. If a list/tuple is passed, it must contain the file names (full paths) of the
                 images to be used. Note that the list/tuple must contain the paths to the images,
                 not the images themselves. If a filepath string is passed, it must point either to
@@ -123,14 +117,14 @@ class DataGenerator:
             filenames_type (string, optional): In case a string is passed for `filenames`, this indicates what
                 type of file `filenames` is. It can be either 'pickle' for a pickled file or 'text' for a
                 plain text file.
-            images_dir and target_images_dir (string, optional): In case a text file is passed for `filenames`, the full paths to
+            images_dir (string, optional): In case a text file is passed for `filenames`, the full paths to
                 the images will be composed from `images_dir` and the names in the text file, i.e. this
                 should be the directory that contains the images to which the text file refers.
                 If `filenames_type` is not 'text', then this argument is irrelevant.
             labels (string or list, optional): `None` or either a Python list/tuple or a string representing
                 the path to a pickled file containing a list/tuple. The list/tuple must contain Numpy arrays
                 that represent the labels of the dataset.
-            image_ids and target_image_ids (string or list, optional): `None` or either a Python list/tuple or a string representing
+            image_ids (string or list, optional): `None` or either a Python list/tuple or a string representing
                 the path to a pickled file containing a list/tuple. The list/tuple must contain the image
                 IDs of the images in the dataset.
             eval_neutral (string or list, optional): `None` or either a Python list/tuple or a string representing
@@ -151,14 +145,13 @@ class DataGenerator:
                             'xmax': labels_output_format.index('xmax'),
                             'ymax': labels_output_format.index('ymax')} # This dictionary is for internal use.
 
-        self.dataset_size = 0  # As long as we haven't loaded anything yet, the dataset size is zero.
-        self.target_dataset_size = 0
+        self.dataset_size = 0 # As long as we haven't loaded anything yet, the dataset size is zero.
         self.load_images_into_memory = load_images_into_memory
-        self.images = None  # The only way that this list will not stay `None` is if `load_images_into_memory == True`.
-        self.target_images = None  #
+        self.images = None # The only way that this list will not stay `None` is if `load_images_into_memory == True`.
 
         # `self.filenames` is a list containing all file names of the image samples (full paths).
         # Note that it does not contain the actual image files themselves. This list is one of the outputs of the parser methods.
+        # In case you are loading an HDF5 dataset, this list will be `None`.
         if not filenames is None:
             if isinstance(filenames, (list, tuple)):
                 self.filenames = filenames
@@ -176,38 +169,13 @@ class DataGenerator:
             self.dataset_indices = np.arange(self.dataset_size, dtype=np.int32)
             if load_images_into_memory:
                 self.images = []
-                if verbose: it = tqdm(self.filenames, desc='Loading source images into memory', file=sys.stdout)
+                if verbose: it = tqdm(self.filenames, desc='Loading images into memory', file=sys.stdout)
                 else: it = self.filenames
                 for filename in it:
                     with Image.open(filename) as image:
                         self.images.append(np.array(image, dtype=np.uint8))
         else:
             self.filenames = None
-
-        if not target_filenames is None:
-            if isinstance(target_filenames, (list, tuple)):
-                self.target_filenames = target_filenames
-            elif isinstance(target_filenames, str):
-                with open(target_filenames, 'r') as f: # open(target_filenames, 'rb') as f:
-                    if filenames_type == 'pickle':
-                        self.target_filenames = pickle.load(f)
-                    elif filenames_type == 'text':
-                        self.target_filenames = [os.path.join(target_images_dir, line.strip()) for line in f]
-                    else:
-                        raise ValueError("`filenames_type` can be either 'text' or 'pickle'.")
-            else:
-                raise ValueError("`target_filenames` must be either a Python list/tuple or a string representing a filepath (to a pickled or text file). The value you passed is neither of the two.")
-            self.target_dataset_size = len(self.target_filenames)
-            self.target_dataset_indices = np.arange(self.target_dataset_size, dtype=np.int32)
-            if load_images_into_memory:
-                self.target_images = []
-                if verbose: it = tqdm(self.target_filenames, desc='Loading target images into memory', file=sys.stdout)
-                else: it = self.target_filenames
-                for filename in it:
-                    with Image.open(filename) as image:
-                        self.target_images.append(np.array(image, dtype=np.uint8))
-        else:
-            self.target_filenames = None
 
         # In case ground truth is available, `self.labels` is a list containing for each image a list (or NumPy array)
         # of ground truth bounding boxes for that image.
@@ -232,17 +200,6 @@ class DataGenerator:
                 raise ValueError("`image_ids` must be either a Python list/tuple or a string representing the path to a pickled file containing a list/tuple. The value you passed is neither of the two.")
         else:
             self.image_ids = None
-
-        if not target_image_ids is None:
-            if isinstance(target_image_ids, str):
-                with open(target_image_ids, 'rb') as f:
-                    self.target_image_ids = pickle.load(f)
-            elif isinstance(target_image_ids, (list, tuple)):
-                self.target_image_ids = target_image_ids
-            else:
-                raise ValueError("`target_image_ids` must be either a Python list/tuple or a string representing the path to a pickled file containing a list/tuple. The value you passed is neither of the two.")
-        else:
-            self.target_image_ids = None
 
         if not eval_neutral is None:
             if isinstance(eval_neutral, str):
@@ -277,47 +234,34 @@ class DataGenerator:
         self.hdf5_dataset = h5py.File(self.hdf5_dataset_path, 'r')
         self.dataset_size = len(self.hdf5_dataset['images'])
         self.dataset_indices = np.arange(self.dataset_size, dtype=np.int32) # Instead of shuffling the HDF5 dataset or images in memory, we will shuffle this index list.
-        self.target_dataset_size = len(self.hdf5_dataset['target_images'])
-        self.target_dataset_indices = np.arange(self.target_dataset_size, dtype=np.int32) # Instead of shuffling the HDF5 dataset, we will shuffle this index list.
+        self.imageId_to_idx = {}
 
         if self.load_images_into_memory:
             self.images = []
-            if verbose: tr = trange(self.dataset_size, desc='Loading source images into memory', file=sys.stdout)
+            if verbose: tr = trange(self.dataset_size, desc='Loading images into memory', file=sys.stdout)
             else: tr = range(self.dataset_size)
             for i in tr:
                 self.images.append(self.hdf5_dataset['images'][i].reshape(self.hdf5_dataset['image_shapes'][i]))
-
-            self.target_images = []
-            if verbose: tr = trange(self.target_dataset_size, desc='Loading target images into memory', file=sys.stdout)
-            else: tr = range(self.target_dataset_size)
-            for i in tr:
-                self.target_images.append(self.hdf5_dataset['target_images'][i].reshape(self.hdf5_dataset['target_image_shapes'][i]))
 
         if self.hdf5_dataset.attrs['has_labels']:
             self.labels = []
             labels = self.hdf5_dataset['labels']
             label_shapes = self.hdf5_dataset['label_shapes']
-            if verbose: tr = trange(self.dataset_size, desc='Loading source labels', file=sys.stdout)
+            if verbose: tr = trange(self.dataset_size, desc='Loading labels', file=sys.stdout)
             else: tr = range(self.dataset_size)
             for i in tr:
-                # if len(labels[i]) == 0:  # remove no groundtruth file
-                #     raise Exception('This image has no groundtruth boxes. You should remove it.')
+                if len(labels[i]) == 0:  # remove no groundtruth file
+                    raise Exception('This image has no groundtruth boxes. You should remove it.')
                 self.labels.append(labels[i].reshape(label_shapes[i]))
 
         if self.hdf5_dataset.attrs['has_image_ids']:
             self.image_ids = []
             image_ids = self.hdf5_dataset['image_ids']
-            if verbose: tr = trange(self.dataset_size, desc='Loading source image IDs', file=sys.stdout)
+            if verbose: tr = trange(self.dataset_size, desc='Loading image IDs', file=sys.stdout)
             else: tr = range(self.dataset_size)
             for i in tr:
                 self.image_ids.append(image_ids[i])
-
-            self.target_image_ids = []
-            target_image_ids = self.hdf5_dataset['target_image_ids']
-            if verbose: tr = trange(self.target_dataset_size, desc='Loading target image IDs', file=sys.stdout)
-            else: tr = range(self.target_dataset_size)
-            for i in tr:
-                self.target_image_ids.append(target_image_ids[i])
+                self.imageId_to_idx[image_ids[i]] = i
 
         if self.hdf5_dataset.attrs['has_eval_neutral']:
             self.eval_neutral = []
@@ -461,13 +405,16 @@ class DataGenerator:
             return self.images, self.filenames, self.labels, self.image_ids
 
     def parse_xml(self,
-                  images_dirs=None,
-                  target_images_dirs=None,
-                  image_set_filenames=None,
-                  target_image_set_filenames=None,
-                  annotations_dirs=None,
-                  classes=None,
-                  include_classes='all',
+                  images_dirs,
+                  image_set_filenames,
+                  annotations_dirs=[],
+                  classes=['background',
+                           'aeroplane', 'bicycle', 'bird', 'boat',
+                           'bottle', 'bus', 'car', 'cat',
+                           'chair', 'cow', 'diningtable', 'dog',
+                           'horse', 'motorbike', 'person', 'pottedplant',
+                           'sheep', 'sofa', 'train', 'tvmonitor'],
+                  include_classes = 'all',
                   exclude_truncated=False,
                   exclude_difficult=False,
                   ret=False,
@@ -478,23 +425,15 @@ class DataGenerator:
 
         Arguments:
             images_dirs (list): A list of strings, where each string is the path of a directory that
-                contains source images that are to be part of the dataset. This allows you to aggregate multiple datasets
+                contains images that are to be part of the dataset. This allows you to aggregate multiple datasets
                 into one (e.g. one directory that contains the images for Pascal VOC 2007, another that contains
                 the images for Pascal VOC 2012, etc.).
-            target_images_dirs (list): A list of strings, where each string is the path of a directory that
-                contains target images that are to be part of the dataset. This allows you to aggregate multiple datasets
-                into one (e.g. one directory that contains the images for Pascal VOC 2007, another that contains
-                the images for Pascal VOC 2012, etc.).
-            image_set_filenames (list): A list of strings, where each string is the path of the text file with the
-                sourece image set to be loaded. Must be one file per image directory given. These text files define what
-                images in the respective image directories are to be part of the dataset and simply contains one image ID
-                per line and nothing else.
-            target_image_set_filenames (list): A list of strings, where each string is the path of the text file with the
-                target image set to be loaded. Must be one file per image directory given. These text files define what
-                images in the respective image directories are to be part of the dataset and simply contains one image ID
-                per line and nothing else.
+            image_set_filenames (list): A list of strings, where each string is the path of the text file with the image
+                set to be loaded. Must be one file per image directory given. These text files define what images in the
+                respective image directories are to be part of the dataset and simply contains one image ID per line
+                and nothing else.
             annotations_dirs (list, optional): A list of strings, where each string is the path of a directory that
-                contains the annotations (XML files) that belong to the source images in the respective image directories given.
+                contains the annotations (XML files) that belong to the images in the respective image directories given.
                 The directories must contain one XML file per image and the name of an XML file must be the image ID
                 of the image it belongs to. The content of the XML files must be in the Pascal VOC format.
             classes (list, optional): A list containing the names of the object classes as found in the
@@ -513,18 +452,14 @@ class DataGenerator:
         '''
         # Set class members.
         self.images_dirs = images_dirs
-        self.target_images_dirs = target_images_dirs
         self.annotations_dirs = annotations_dirs
         self.image_set_filenames = image_set_filenames
-        self.target_image_set_filenames = target_image_set_filenames
         self.classes = classes
         self.include_classes = include_classes
 
         # Erase data that might have been parsed before.
         self.filenames = []
-        self.target_filenames = []
         self.image_ids = []
-        self.target_image_ids = []
         self.labels = []
         self.eval_neutral = []
         if not annotations_dirs:
@@ -533,13 +468,12 @@ class DataGenerator:
             annotations_dirs = [None] * len(images_dirs)
 
         for images_dir, image_set_filename, annotations_dir in zip(images_dirs, image_set_filenames, annotations_dirs):
-            # Read the image set file that so that we know all the IDs and groundtruth of all the images to be included in the dataset.
-            # Images are not processed here.
+            # Read the image set file that so that we know all the IDs of all the images to be included in the dataset.
             with open(image_set_filename) as f:
                 image_ids = [line.strip() for line in f] # Note: These are strings, not integers.
                 self.image_ids += image_ids
 
-            if verbose: it = tqdm(image_ids, desc="Processing source image set '{}'".format(os.path.basename(image_set_filename)), file=sys.stdout)
+            if verbose: it = tqdm(image_ids, desc="Processing image set '{}'".format(os.path.basename(image_set_filename)), file=sys.stdout)
             else: it = image_ids
 
             # Loop over all images in this dataset.
@@ -599,45 +533,18 @@ class DataGenerator:
                     self.labels.append(boxes)
                     self.eval_neutral.append(eval_neutr)
 
-        if target_images_dirs and target_image_set_filenames:
-            for images_dir, image_set_filename in zip(target_images_dirs, target_image_set_filenames):
-                # Read the image set file that so that we know all the IDs and groundtruth of all the images to be included in the dataset.
-                # Images are not processed here.
-                with open(image_set_filename) as f:
-                    image_ids = [line.strip() for line in f] # Note: These are strings, not integers.
-                    self.target_image_ids += image_ids
-
-                if verbose: it = tqdm(image_ids, desc="Processing target image set '{}'".format(os.path.basename(image_set_filename)), file=sys.stdout)
-                else: it = image_ids
-
-                # Loop over all images in this dataset.
-                for image_id in it:
-
-                    filename = '{}'.format(image_id) + '.jpg'
-                    self.target_filenames.append(os.path.join(images_dir, filename))
-
         self.dataset_size = len(self.filenames)
         self.dataset_indices = np.arange(self.dataset_size, dtype=np.int32)
-        self.target_dataset_size = len(self.target_filenames)
-        self.target_dataset_indices = np.arange(self.target_dataset_size, dtype=np.int32)
         if self.load_images_into_memory:
             self.images = []
-            if verbose: it = tqdm(self.filenames, desc='Loading source images into memory', file=sys.stdout)
+            if verbose: it = tqdm(self.filenames, desc='Loading images into memory', file=sys.stdout)
             else: it = self.filenames
             for filename in it:
                 with Image.open(filename) as image:
                     self.images.append(np.array(image, dtype=np.uint8))
 
-            self.target_images = []
-            if verbose: it = tqdm(self.target_filenames, desc='Loading target images into memory', file=sys.stdout)
-            else: it = self.target_filenames
-            for filename in it:
-                with Image.open(filename) as image:
-                    self.target_images.append(np.array(image, dtype=np.uint8))
-
         if ret:
-            return self.images, self.target_images, self.filenames, self.target_filenames, self.labels, \
-                   self.image_ids, self.target_image_ids, self.eval_neutral
+            return self.images, self.filenames, self.labels, self.image_ids, self.eval_neutral
 
     def parse_json(self,
                    images_dirs,
@@ -805,7 +712,6 @@ class DataGenerator:
         self.hdf5_dataset_path = file_path
 
         dataset_size = len(self.filenames)
-        target_dataset_size = len(self.target_filenames)
 
         # Create the HDF5 file.
         hdf5_dataset = h5py.File(file_path, 'w')
@@ -830,22 +736,12 @@ class DataGenerator:
                                                   maxshape=(None),
                                                   dtype=h5py.special_dtype(vlen=np.uint8))
 
-        hdf5_target_images = hdf5_dataset.create_dataset(name='target_images',
-                                                         shape=(target_dataset_size,),
-                                                         maxshape=(None),
-                                                         dtype=h5py.special_dtype(vlen=np.uint8))
-
         # Create the dataset that will hold the image heights, widths and channels that
         # we need in order to reconstruct the images from the flattened arrays later.
         hdf5_image_shapes = hdf5_dataset.create_dataset(name='image_shapes',
                                                         shape=(dataset_size, 3),
                                                         maxshape=(None, 3),
                                                         dtype=np.int32)
-
-        hdf5_target_image_shapes = hdf5_dataset.create_dataset(name='target_image_shapes',
-                                                               shape=(target_dataset_size, 3),
-                                                               maxshape=(None, 3),
-                                                               dtype=np.int32)
 
         if not (self.labels is None):
 
@@ -871,11 +767,6 @@ class DataGenerator:
                                                          maxshape=(None),
                                                          dtype=h5py.special_dtype(vlen=str))
 
-            hdf5_target_image_ids = hdf5_dataset.create_dataset(name='target_image_ids',
-                                                                shape=(target_dataset_size,),
-                                                                maxshape=(None),
-                                                                dtype=h5py.special_dtype(vlen=str))
-
             hdf5_dataset.attrs.modify(name='has_image_ids', value=True)
 
         if not (self.eval_neutral is None):
@@ -889,7 +780,7 @@ class DataGenerator:
             hdf5_dataset.attrs.modify(name='has_eval_neutral', value=True)
 
         if verbose:
-            tr = trange(dataset_size, desc='Creating HDF5 source dataset', file=sys.stdout)
+            tr = trange(dataset_size, desc='Creating HDF5 dataset', file=sys.stdout)
         else:
             tr = range(dataset_size)
 
@@ -948,49 +839,11 @@ class DataGenerator:
 
                 hdf5_eval_neutral[i] = self.eval_neutral[i]
 
-        if verbose:
-            tr = trange(target_dataset_size, desc='Creating HDF5 target dataset', file=sys.stdout)
-        else:
-            tr = range(target_dataset_size)
-
-        # Iterate over all images in the dataset.
-        for i in tr:
-
-            # Store the image.
-            with Image.open(self.target_filenames[i]) as image:
-
-                image = np.asarray(image, dtype=np.uint8)
-
-                # Make sure all images end up having three channels.
-                if image.ndim == 2:
-                    image = np.stack([image] * 3, axis=-1)
-                elif image.ndim == 3:
-                    if image.shape[2] == 1:
-                        image = np.concatenate([image] * 3, axis=-1)
-                    elif image.shape[2] == 4:
-                        image = image[:,:,:3]
-
-                if resize:
-                    # img_height_bf_resize, img_width_bf_resize = image.shape[:2]
-                    image = cv2.resize(image, dsize=(resize[1], resize[0]))
-
-                # Flatten the image array and write it to the images dataset.
-                hdf5_target_images[i] = image.reshape(-1)
-                # Write the image's shape to the image shapes dataset.
-                hdf5_target_image_shapes[i] = image.shape
-
-            # Store the image ID if we have one.
-            if not (self.target_image_ids is None):
-
-                hdf5_target_image_ids[i] = self.target_image_ids[i]
-
         hdf5_dataset.close()
         self.hdf5_dataset = h5py.File(file_path, 'r')
         self.hdf5_dataset_path = file_path
         self.dataset_size = len(self.hdf5_dataset['images'])
         self.dataset_indices = np.arange(self.dataset_size, dtype=np.int32) # Instead of shuffling the HDF5 dataset, we will shuffle this index list.
-        self.target_dataset_size = len(self.hdf5_dataset['target_images'])
-        self.target_dataset_indices = np.arange(self.target_dataset_size, dtype=np.int32) # Instead of shuffling the HDF5 dataset, we will shuffle this index list.
 
     def generate(self,
                  batch_size,
@@ -1109,15 +962,6 @@ class DataGenerator:
             for i in range(len(objects_to_shuffle)):
                 objects_to_shuffle[i][:] = shuffled_objects[i]
 
-            target_objects_to_shuffle = [self.target_dataset_indices]
-            if not (self.target_filenames is None):
-                target_objects_to_shuffle.append(self.target_filenames)
-            if not (self.target_image_ids is None):
-                target_objects_to_shuffle.append(self.target_image_ids)
-            target_shuffled_objects = sklearn.utils.shuffle(*target_objects_to_shuffle)
-            for i in range(len(target_objects_to_shuffle)):
-                target_objects_to_shuffle[i][:] = target_shuffled_objects[i]
-
         if degenerate_box_handling == 'remove':
             box_filter = BoxFilter(check_overlap=False,
                                    check_min_area=False,
@@ -1134,44 +978,32 @@ class DataGenerator:
         #############################################################################################
 
         current = 0
-        target_current = 0
 
         while True:
 
             batch_X, batch_y = [], []
             batch_X_foggy = []
 
-            if current + batch_size > self.dataset_size:
+            if current >= self.dataset_size:
                 current = 0
-            if target_current + batch_size > self.target_dataset_size:
-                target_current = 0
 
             #########################################################################################
             # Maybe shuffle the dataset if a full pass over the dataset has finished.
             #########################################################################################
 
-            if shuffle:
-                objects_to_shuffle = [self.dataset_indices]
-                if not (self.filenames is None):
-                    objects_to_shuffle.append(self.filenames)
-                if not (self.labels is None):
-                    objects_to_shuffle.append(self.labels)
-                if not (self.image_ids is None):
-                    objects_to_shuffle.append(self.image_ids)
-                if not (self.eval_neutral is None):
-                    objects_to_shuffle.append(self.eval_neutral)
-                shuffled_objects = sklearn.utils.shuffle(*objects_to_shuffle)
-                for i in range(len(objects_to_shuffle)):
-                    objects_to_shuffle[i][:] = shuffled_objects[i]
-
-                target_objects_to_shuffle = [self.target_dataset_indices]
-                if not (self.target_filenames is None):
-                    target_objects_to_shuffle.append(self.target_filenames)
-                if not (self.target_image_ids is None):
-                    target_objects_to_shuffle.append(self.target_image_ids)
-                target_shuffled_objects = sklearn.utils.shuffle(*target_objects_to_shuffle)
-                for i in range(len(target_objects_to_shuffle)):
-                    target_objects_to_shuffle[i][:] = target_shuffled_objects[i]
+                if shuffle:
+                    objects_to_shuffle = [self.dataset_indices]
+                    if not (self.filenames is None):
+                        objects_to_shuffle.append(self.filenames)
+                    if not (self.labels is None):
+                        objects_to_shuffle.append(self.labels)
+                    if not (self.image_ids is None):
+                        objects_to_shuffle.append(self.image_ids)
+                    if not (self.eval_neutral is None):
+                        objects_to_shuffle.append(self.eval_neutral)
+                    shuffled_objects = sklearn.utils.shuffle(*objects_to_shuffle)
+                    for i in range(len(objects_to_shuffle)):
+                        objects_to_shuffle[i][:] = shuffled_objects[i]
 
             #########################################################################################
             # Get the images, (maybe) image IDs, (maybe) labels, etc. for this batch.
@@ -1183,31 +1015,56 @@ class DataGenerator:
             # 3) Else, if we have neither of the above, we'll have to load the individual image
             #    files from disk.
             batch_indices = self.dataset_indices[current:current+batch_size]
-            target_batch_indices = self.target_dataset_indices[target_current:target_current+batch_size]
             if not (self.images is None):  # Load images from memory. Not supported yet
                 raise ValueError('Not supported yet.')
                 for i in batch_indices:
-                    batch_X.append(self.images[i])
+                    image_id = self.image_ids[i]
+                    if image_id.startswith('source'):
+                        batch_X.append(self.images[i])
+                        image_id_foggy = image_id.replace('source', 'target', 1)
+                        foggy_image_idx = self.imageId_to_idx[image_id_foggy]
+                        batch_X_foggy.append(self.images[foggy_image_idx])
+                    elif image_id.startswith('target'):
+                        batch_X_foggy.append(self.images[i])
+                        image_id_source = image_id.replace('target', 'source', 1)
+                        source_image_idx = self.imageId_to_idx[image_id_source]
+                        batch_X.append(self.images[source_image_idx])
+                    else:
+                        raise ValueError('Undefined image_id. image_id should start with source or target')
                 if not (self.filenames is None):
                     batch_filenames = self.filenames[current:current+batch_size]
                 else:
                     batch_filenames = None
             elif not (self.hdf5_dataset is None):  # Get images from hdf5 file
                 if self.dataset == 'train':
-                    for i in batch_indices:
-                        batch_X.append(self.hdf5_dataset['images'][i].reshape(self.hdf5_dataset['image_shapes'][i]))
-                    for i in target_batch_indices:
-                        batch_X_foggy.append(self.hdf5_dataset['target_images'][i].reshape(self.hdf5_dataset['target_image_shapes'][i]))
-                elif self.dataset == 'val':
-                    for i in batch_indices:
-                        current_image = self.hdf5_dataset['images'][i].reshape(self.hdf5_dataset['image_shapes'][i])
-                        batch_X.append(current_image)
-                        batch_X_foggy.append(deepcopy(current_image))
+                    for iteration, i in enumerate(batch_indices):
+                        image_id = self.image_ids[current + iteration]
+                        if image_id.startswith('source'):
+                            batch_X.append(self.hdf5_dataset['images'][i].reshape(self.hdf5_dataset['image_shapes'][i]))
+                            image_id_foggy = image_id.replace('source', 'target', 1) + '_foggy_beta_0.02'
+                            foggy_image_idx = self.imageId_to_idx[image_id_foggy]
+                            batch_X_foggy.append(self.hdf5_dataset['images'][foggy_image_idx].reshape(self.hdf5_dataset['image_shapes'][foggy_image_idx]))
+                        elif image_id.startswith('target'):
+                            batch_X_foggy.append(self.hdf5_dataset['images'][i].reshape(self.hdf5_dataset['image_shapes'][i]))
+                            image_id_source = image_id.replace('target', 'source', 1)[:-16]
+                            source_image_idx = self.imageId_to_idx[image_id_source]
+                            batch_X.append(self.hdf5_dataset['images'][source_image_idx].reshape(self.hdf5_dataset['image_shapes'][source_image_idx]))
+                        else:
+                            raise ValueError('Undefined image_id. image_id should start with source or target')
+                # elif self.dataset == 'val':
+                #     for i in batch_indices:
+                #         current_image = self.hdf5_dataset['images'][i].reshape(self.hdf5_dataset['image_shapes'][i])
+                #         batch_X.append(current_image)
+                #         batch_X_foggy.append(deepcopy(current_image))
                 else:
                     raise ValueError('dataset should be train or val.')
-
                 if not (self.filenames is None):
                     batch_filenames = self.filenames[current:current+batch_size]
+                    if self.dataset == 'train':
+                        if 'filenames' in returns:
+                            for idx, filename_in_batch in enumerate(batch_filenames):
+                                if 'target' in filename_in_batch:
+                                    batch_filenames[idx] = filename_in_batch.replace('target', 'source', 1)[:-16]
                 else:
                     batch_filenames = None
             else:
@@ -1231,6 +1088,11 @@ class DataGenerator:
             # Get the image IDs for this batch (if there are any).
             if not (self.image_ids is None):
                 batch_image_ids = self.image_ids[current:current+batch_size]
+                if self.dataset == 'train':
+                    if 'image_ids' in returns:
+                        for idx, imageid_in_batch in enumerate(batch_image_ids):
+                            if 'target' in imageid_in_batch:
+                                batch_image_ids[idx] = imageid_in_batch.replace('target', 'source', 1)[:-16]
             else:
                 batch_image_ids = None
 
@@ -1240,7 +1102,6 @@ class DataGenerator:
                 batch_original_labels = deepcopy(batch_y) # The original, unaltered labels
 
             current += batch_size
-            target_current += batch_size
 
             #########################################################################################
             # Maybe perform image transformations.
@@ -1264,12 +1125,21 @@ class DataGenerator:
                 if transformations:
 
                     inverse_transforms = []
+                    batch_y_foggy = deepcopy(batch_y[i])
                     # Combine the original image and the foggy image at the last channel.
                     num_color_channels = batch_X[i].shape[-1]
                     combined_images = np.concatenate((batch_X[i], batch_X_foggy[i]), axis=2)
 
                     for transform in transformations:
                         if not (self.labels is None):
+                            # if ('inverse_transform' in returns) and ('return_inverter' in inspect.signature(transform).parameters):
+                            #     batch_X[i], batch_y[i], inverse_transform = transform(batch_X[i], batch_y[i], return_inverter=True)
+                            #     batch_X_foggy[i], _ = transform(batch_X_foggy[i], batch_y_foggy)
+                            #     inverse_transforms.append(inverse_transform)
+                            # else:
+                            #     batch_X[i], batch_y[i] = transform(batch_X[i], batch_y[i])
+                            #     batch_X_foggy[i], _ = transform(batch_X_foggy[i], batch_y_foggy)
+
                             if ('inverse_transform' in returns) and ('return_inverter' in inspect.signature(transform).parameters):
                                 combined_images, batch_y[i], inverse_transform = transform(combined_images, batch_y[i], return_inverter=True)
                                 inverse_transforms.append(inverse_transform)
@@ -1282,6 +1152,14 @@ class DataGenerator:
                                 continue
 
                         else:
+                            # if ('inverse_transform' in returns) and ('return_inverter' in inspect.signature(transform).parameters):
+                            #     batch_X[i], inverse_transform = transform(batch_X[i], return_inverter=True)
+                            #     batch_X_foggy[i] = transform(batch_X_foggy[i])
+                            #     inverse_transforms.append(inverse_transform)
+                            # else:
+                            #     batch_X[i] = transform(batch_X[i])
+                            #     batch_X_foggy[i] = transform(batch_X_foggy[i])
+
                             if ('inverse_transform' in returns) and ('return_inverter' in inspect.signature(transform).parameters):
                                 combined_images, inverse_transform = transform(combined_images, return_inverter=True)
                                 inverse_transforms.append(inverse_transform)
@@ -1373,18 +1251,15 @@ class DataGenerator:
             if 'processed_images' in returns: ret.append([batch_X, batch_X_foggy])
             # The loss function in keras requires y_pred and y_true should have the same dimension.
             # The first element (act as a placeholder) in encoded_labels is the y_true for the first loss.
-            # if 'encoded_labels' in returns: ret.append([np.zeros((batch_X_foggy.shape[0], 256)),
-            #                                             np.zeros((batch_X_foggy.shape[0], 256)),
-            #                                             batch_y_encoded])
             if 'encoded_labels' in returns: ret.append([np.zeros((batch_X_foggy.shape[0], 64)),
                                                         np.zeros((batch_X_foggy.shape[0], 128)),
                                                         np.zeros((batch_X_foggy.shape[0], 256)),
-                                                        # np.zeros((batch_X_foggy.shape[0], 512)),
-                                                        # np.zeros((batch_X_foggy.shape[0], 1024)),
-                                                        # np.zeros((batch_X_foggy.shape[0], 512)),
-                                                        # np.zeros((batch_X_foggy.shape[0], 256)),
-                                                        # np.zeros((batch_X_foggy.shape[0], 256)),
-                                                        # np.zeros((batch_X_foggy.shape[0], 256)),
+                                                        np.zeros((batch_X_foggy.shape[0], 512)),
+                                                        np.zeros((batch_X_foggy.shape[0], 1024)),
+                                                        np.zeros((batch_X_foggy.shape[0], 512)),
+                                                        np.zeros((batch_X_foggy.shape[0], 256)),
+                                                        np.zeros((batch_X_foggy.shape[0], 256)),
+                                                        np.zeros((batch_X_foggy.shape[0], 256)),
                                                         batch_y_encoded])
             if 'matched_anchors' in returns: ret.append(batch_matched_anchors)
             if 'processed_labels' in returns: ret.append(batch_y)
@@ -1431,10 +1306,10 @@ class DataGenerator:
     def get_dataset(self):
         '''
         Returns:
-            6-tuple containing lists and/or `None` for the filenames, labels, image IDs,
+            4-tuple containing lists and/or `None` for the filenames, labels, image IDs,
             and evaluation-neutrality annotations.
         '''
-        return self.filenames, self.target_filenames, self.labels, self.image_ids, self.target_image_ids, self.eval_neutral
+        return self.filenames, self.labels, self.image_ids, self.eval_neutral
 
     def get_dataset_size(self):
         '''

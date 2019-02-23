@@ -1373,19 +1373,19 @@ class DataGenerator:
             if 'processed_images' in returns: ret.append([batch_X, batch_X_foggy])
             # The loss function in keras requires y_pred and y_true should have the same dimension.
             # The first element (act as a placeholder) in encoded_labels is the y_true for the first loss.
-            # if 'encoded_labels' in returns: ret.append([np.zeros((batch_X_foggy.shape[0], 256)),
-            #                                             np.zeros((batch_X_foggy.shape[0], 256)),
-            #                                             batch_y_encoded])
             if 'encoded_labels' in returns: ret.append([np.zeros((batch_X_foggy.shape[0], 64)),
                                                         np.zeros((batch_X_foggy.shape[0], 128)),
-                                                        np.zeros((batch_X_foggy.shape[0], 256)),
-                                                        # np.zeros((batch_X_foggy.shape[0], 512)),
-                                                        # np.zeros((batch_X_foggy.shape[0], 1024)),
-                                                        # np.zeros((batch_X_foggy.shape[0], 512)),
-                                                        # np.zeros((batch_X_foggy.shape[0], 256)),
-                                                        # np.zeros((batch_X_foggy.shape[0], 256)),
-                                                        # np.zeros((batch_X_foggy.shape[0], 256)),
                                                         batch_y_encoded])
+            # if 'encoded_labels' in returns: ret.append([np.zeros((batch_X_foggy.shape[0], 64)),
+            #                                             np.zeros((batch_X_foggy.shape[0], 128)),
+            #                                             np.zeros((batch_X_foggy.shape[0], 256)),
+            #                                             # np.zeros((batch_X_foggy.shape[0], 512)),
+            #                                             # np.zeros((batch_X_foggy.shape[0], 1024)),
+            #                                             # np.zeros((batch_X_foggy.shape[0], 512)),
+            #                                             # np.zeros((batch_X_foggy.shape[0], 256)),
+            #                                             # np.zeros((batch_X_foggy.shape[0], 256)),
+            #                                             # np.zeros((batch_X_foggy.shape[0], 256)),
+            #                                             batch_y_encoded])
             if 'matched_anchors' in returns: ret.append(batch_matched_anchors)
             if 'processed_labels' in returns: ret.append(batch_y)
             if 'filenames' in returns: ret.append(batch_filenames)

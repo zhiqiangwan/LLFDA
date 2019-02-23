@@ -1,9 +1,13 @@
+"""
+Find the image ids that have the desired object. Filter out the other image ids.
+"""
+
 from bs4 import BeautifulSoup
 import os
 
-annotation_dir = '../../datasets/VOCdevkit/VOC2007/Annotations'
-image_set_filename_before_filter = '../../datasets/VOCdevkit/VOC2007/ImageSets/Main/test.txt'
-image_set_filename_after_filter = '../../datasets/VOCdevkit/VOC2007_CAR/ImageSets/Main'
+annotation_dir = '../../datasets/VOCdevkit/VOC2012/Annotations'
+image_set_filename_before_filter = '../../datasets/VOCdevkit/VOC2012/ImageSets/Main/val.txt'
+image_set_filename_after_filter = '../../datasets/VOCdevkit/VOC2012_CAR/ImageSets/Main'
 txt_filename = os.path.join(image_set_filename_after_filter, 'test.txt')
 
 if not os.path.exists(image_set_filename_after_filter):
