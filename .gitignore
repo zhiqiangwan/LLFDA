@@ -1,2 +1,4 @@
 trained_weights/
 *.h5
+*.pyc
+examples/

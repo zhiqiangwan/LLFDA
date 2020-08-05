@@ -1376,9 +1376,9 @@ class DataGenerator:
             # if 'encoded_labels' in returns: ret.append([np.zeros((batch_X_foggy.shape[0], 256)),
             #                                             np.zeros((batch_X_foggy.shape[0], 256)),
             #                                             batch_y_encoded])
-            if 'encoded_labels' in returns: ret.append([np.zeros((batch_X_foggy.shape[0], 64)),
-                                                        np.zeros((batch_X_foggy.shape[0], 128)),
-                                                        np.zeros((batch_X_foggy.shape[0], 256)),
+            if 'encoded_labels' in returns: ret.append([np.zeros((batch_X_foggy.shape[0])),
+                                                        np.zeros((batch_X_foggy.shape[0])),
+                                                        np.zeros((batch_X_foggy.shape[0])),
                                                         # np.zeros((batch_X_foggy.shape[0], 512)),
                                                         # np.zeros((batch_X_foggy.shape[0], 1024)),
                                                         # np.zeros((batch_X_foggy.shape[0], 512)),

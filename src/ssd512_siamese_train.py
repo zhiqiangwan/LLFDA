@@ -13,6 +13,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 from models.keras_ssd512_Siamese import ssd_512
+# from models.da_ssd512_other_loss_metrics import ssd_512
 from keras_loss_function.keras_ssd_loss import SSDLoss
 from keras_layers.keras_layer_AnchorBoxes import AnchorBoxes
 from keras_layers.keras_layer_DecodeDetections import DecodeDetections
@@ -65,8 +66,8 @@ loss_weights = [0.00001, 0.00001, 0.00001] + [1.0]
 Source_Only = False
 
 # 'City_to_foggy0_01_resize_600_1200' # 'City_to_foggy0_02_resize_600_1200'  # 'SIM10K_to_VOC07'
-# 'SIM10K'  # 'Cityscapes_foggy_beta_0_01'  # 'City_to_foggy0_01_resize_400_800' # 'City_to_foggy0_02_resize_400_800'
-DatasetName = 'SIM10K_to_City_resize_400_800'
+# 'SIM10K'  # 'Cityscapes_foggy_beta_0_01'  # 'City_to_foggy0_02_resize_400_800'
+DatasetName = 'City_to_foggy0_01_resize_400_800'  # 'SIM10K_to_City_resize_400_800'
 processed_dataset_path = './processed_dataset_h5/' + DatasetName
 if not os.path.exists(processed_dataset_path):
     os.makedirs(processed_dataset_path)
@@ -558,7 +559,7 @@ def lr_schedule(epoch):
 
 
 # Define model callbacks.
-checkpoint_path = '../trained_weights/SSD512_City_to_foggy0_01_resize_400_800/current/pool123_loss_weights_0_000001'
+checkpoint_path = '../trained_weights/debug'
 if not os.path.exists(checkpoint_path):
     os.makedirs(checkpoint_path)
 

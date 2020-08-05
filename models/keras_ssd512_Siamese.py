@@ -17,6 +17,7 @@ limitations under the License.
 '''
 
 from __future__ import division
+from functools import partial
 import numpy as np
 
 import tensorflow as tf
@@ -293,6 +294,93 @@ def ssd_512(image_size,
     predicted_output = []
     batch_size = tf.shape(x_source)[0]
 
+    da_loss_metric = 'MMD_loss'  # 'coral'  #  'average_over_samples_L2_loss'  # 'L2_loss'  # 'abs_loss'
+    print('da_loss_metric is {0:s}'.format(da_loss_metric))
+    if da_loss_metric == 'L2_loss':
+        def domain_adapt_loss(tensors):
+            src = tensors[0]
+            tgt = tensors[1]
+            distance_loss = tf.reduce_sum(tf.square(src-tgt), axis=1)
+            return tf.reduce_mean(distance_loss)
+    elif da_loss_metric == 'average_over_samples_L2_loss':
+        def domain_adapt_loss(tensors):
+            src = tf.reduce_mean(tensors[0], axis=0)
+            tgt = tf.reduce_mean(tensors[1], axis=0)
+            distance_loss = tf.reduce_mean(tf.square(src-tgt))
+            return distance_loss
+    elif da_loss_metric == 'average_over_samples_L1_loss':
+        def domain_adapt_loss(tensors):
+            src = tf.reduce_mean(tensors[0], axis=0)
+            tgt = tf.reduce_mean(tensors[1], axis=0)
+            distance_loss = tf.reduce_mean(tf.abs(src-tgt))
+            return distance_loss
+    elif da_loss_metric == 'MMD_loss':
+        # From https://github.com/zhiqiangwan/WDGRL/blob/master/digits/mnist_usps/mmd.py
+        def compute_pairwise_distances(x, y):
+            if not len(x.get_shape()) == len(y.get_shape()) == 2:
+                raise ValueError('Both inputs should be matrices.')
+            if x.get_shape().as_list()[1] != y.get_shape().as_list()[1]:
+                raise ValueError('The number of features should be the same.')
+
+            norm = lambda x: tf.reduce_sum(tf.square(x), 1)
+            return tf.transpose(norm(tf.expand_dims(x, 2)-tf.transpose(y)))
+
+        def gaussian_kernel_matrix(x, y, sigmas):
+            beta = 1./(2.*(tf.expand_dims(sigmas, 1)))
+            dist = compute_pairwise_distances(x, y)
+            s = tf.matmul(beta, tf.reshape(dist, (1, -1)))
+            return tf.reshape(tf.reduce_sum(tf.exp(-s), 0), tf.shape(dist))
+
+        def maximum_mean_discrepancy(x, y, kernel=gaussian_kernel_matrix):
+            cost = tf.reduce_mean(kernel(x, x))
+            cost += tf.reduce_mean(kernel(y, y))
+            cost -= 2*tf.reduce_mean(kernel(x, y))
+            # We do not allow the loss to become negative.
+            cost = tf.where(cost > 0, cost, 0, name='value')
+            return cost
+
+        def domain_adapt_loss(tensors):
+            src = tensors[0]
+            tgt = tensors[1]
+            src_shape = src.get_shape().as_list()
+            num_feature_maps = src_shape[-1]
+            pooling_size = int(src_shape[1] / 10.0)
+            src = tf.nn.avg_pool(src, [1, pooling_size, pooling_size, 1], [1, pooling_size, pooling_size, 1], 'VALID')
+            tgt = tf.nn.avg_pool(tgt, [1, pooling_size, pooling_size, 1], [1, pooling_size, pooling_size, 1], 'VALID')
+            src = tf.reshape(src, [-1, num_feature_maps])
+            tgt = tf.reshape(tgt, [-1, num_feature_maps])
+            sigmas = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1, 5, 10, 15, 20, 25, 30, 35, 100, 1e3, 1e4, 1e5, 1e6]
+            gaussian_kernel = partial(gaussian_kernel_matrix, sigmas=tf.constant(sigmas))
+            loss_value = maximum_mean_discrepancy(src, tgt, kernel=gaussian_kernel)
+            mmd_loss = tf.maximum(1e-4, loss_value)
+            return mmd_loss
+    elif da_loss_metric == 'coral':
+        def domain_adapt_loss(tensors):
+            src = tensors[0]
+            tgt = tensors[1]
+            src_shape = src.get_shape().as_list()
+            num_feature_maps = src_shape[-1]
+            pooling_size = int(src_shape[1] / 10.0)
+            src = tf.nn.avg_pool(src, [1, pooling_size, pooling_size, 1], [1, pooling_size, pooling_size, 1], 'VALID')
+            tgt = tf.nn.avg_pool(tgt, [1, pooling_size, pooling_size, 1], [1, pooling_size, pooling_size, 1], 'VALID')
+            src = tf.reshape(src, [-1, num_feature_maps])
+            tgt = tf.reshape(tgt, [-1, num_feature_maps])
+            d = tf.cast(tf.shape(src)[1], tf.float32)
+            batch_size1 = tf.cast(tf.shape(src)[0], tf.float32)
+            # From https://github.com/harshitbansal05/Deep-Coral-Tf/blob/master/alexnet.py#L275
+            # Source covariance
+            xm = src-tf.reduce_mean(src, 0, keep_dims=True)
+            xc = tf.matmul(tf.transpose(xm), xm)/batch_size1
+            # Target covariance
+            xmt = tgt-tf.reduce_mean(tgt, 0, keep_dims=True)
+            xct = tf.matmul(tf.transpose(xmt), xmt)/batch_size1
+
+            coral_loss = tf.reduce_sum(tf.multiply((xc-xct), (xc-xct)))
+            coral_loss /= 4 * d * d
+            return coral_loss
+    else:
+        raise Exception("Unsupported domain loss: {}".format(da_loss_metric))
+
     conv1_1 = Conv2D(64, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal',
                      kernel_regularizer=l2(l2_reg), name='conv1_1')(x1)
     conv1_2 = Conv2D(64, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal',
@@ -301,10 +389,14 @@ def ssd_512(image_size,
 
     pool1_source = Lambda(lambda pool1: pool1[:batch_size, :, :, :])(pool1)
     pool1_target = Lambda(lambda pool1: pool1[batch_size:, :, :, :])(pool1)
-    pool1_source_global_pool = GlobalAveragePooling2D()(pool1_source)
-    pool1_target_global_pool = GlobalAveragePooling2D()(pool1_target)
-    pool1_source_substract_target = Subtract(name='pool1_GAP_substract')([pool1_source_global_pool,
-                                                                          pool1_target_global_pool])
+    if da_loss_metric in ('MMD_loss', 'coral'):
+        pool1_source_global_pool = pool1_source
+        pool1_target_global_pool = pool1_target
+    else:
+        pool1_source_global_pool = GlobalAveragePooling2D()(pool1_source)
+        pool1_target_global_pool = GlobalAveragePooling2D()(pool1_target)
+    pool1_source_substract_target = Lambda(domain_adapt_loss, name='pool1_GAP_substract')([pool1_source_global_pool,
+                                                                                           pool1_target_global_pool])
     predicted_output.append(pool1_source_substract_target)
 
     conv2_1 = Conv2D(128, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal',
@@ -315,10 +407,14 @@ def ssd_512(image_size,
 
     pool2_source = Lambda(lambda pool2: pool2[:batch_size, :, :, :])(pool2)
     pool2_target = Lambda(lambda pool2: pool2[batch_size:, :, :, :])(pool2)
-    pool2_source_global_pool = GlobalAveragePooling2D()(pool2_source)
-    pool2_target_global_pool = GlobalAveragePooling2D()(pool2_target)
-    pool2_source_substract_target = Subtract(name='pool2_GAP_substract')([pool2_source_global_pool,
-                                                                          pool2_target_global_pool])
+    if da_loss_metric in ('MMD_loss', 'coral'):
+        pool2_source_global_pool = pool2_source
+        pool2_target_global_pool = pool2_target
+    else:
+        pool2_source_global_pool = GlobalAveragePooling2D()(pool2_source)
+        pool2_target_global_pool = GlobalAveragePooling2D()(pool2_target)
+    pool2_source_substract_target = Lambda(domain_adapt_loss, name='pool2_GAP_substract')([pool2_source_global_pool,
+                                                                                           pool2_target_global_pool])
     predicted_output.append(pool2_source_substract_target)
 
     conv3_1 = Conv2D(256, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal',
@@ -331,10 +427,14 @@ def ssd_512(image_size,
 
     pool3_source = Lambda(lambda pool3: pool3[:batch_size, :, :, :])(pool3)
     pool3_target = Lambda(lambda pool3: pool3[batch_size:, :, :, :])(pool3)
-    pool3_source_global_pool = GlobalAveragePooling2D()(pool3_source)
-    pool3_target_global_pool = GlobalAveragePooling2D()(pool3_target)
-    pool3_source_substract_target = Subtract(name='pool3_GAP_substract')([pool3_source_global_pool,
-                                                                          pool3_target_global_pool])
+    if da_loss_metric in ('MMD_loss', 'coral'):
+        pool3_source_global_pool = pool3_source
+        pool3_target_global_pool = pool3_target
+    else:
+        pool3_source_global_pool = GlobalAveragePooling2D()(pool3_source)
+        pool3_target_global_pool = GlobalAveragePooling2D()(pool3_target)
+    pool3_source_substract_target = Lambda(domain_adapt_loss, name='pool3_GAP_substract')([pool3_source_global_pool,
+                                                                                           pool3_target_global_pool])
     predicted_output.append(pool3_source_substract_target)
 
     conv4_1 = Conv2D(512, (3, 3), activation='relu', padding='same', kernel_initializer='he_normal',

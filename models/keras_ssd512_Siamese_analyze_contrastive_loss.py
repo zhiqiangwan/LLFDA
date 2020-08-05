@@ -21,7 +21,8 @@ import numpy as np
 
 import tensorflow as tf
 from keras.models import Model
-from keras.layers import Input, Lambda, Activation, Conv2D, MaxPooling2D, ZeroPadding2D, Reshape, Concatenate, Subtract, GlobalAveragePooling2D, Multiply
+from keras.layers import Input, Lambda, Activation, Conv2D, MaxPooling2D, ZeroPadding2D, Reshape, Concatenate, Subtract
+from keras.layers import GlobalAveragePooling2D, Multiply, GlobalMaxPooling2D, Add
 from keras.regularizers import l2
 import keras.backend as K
 
@@ -275,10 +276,42 @@ def ssd_512(image_size,
         source = Lambda(lambda tensor: tensor[:batch_size, :, :, :])(tensor)
         target = Lambda(lambda tensor: tensor[batch_size:, :, :, :])(tensor)
         source_sub_target = Subtract(name=name)([source, target])
+        # source_average = GlobalMaxPooling2D()(source)
+        #
+        # def calculate_average(input_tensor):
+        #     # input_tensor = input_tensor + tf.to_float(tf.equal(input_tensor, tf.zeros_like(input_tensor)))
+        #     input_tensor = K.expand_dims(K.expand_dims(input_tensor, axis=1), axis=1)
+        #     tile_shape = K.concatenate([K.ones([1], tf.int32), tf.shape(source)[1:3], K.ones([1], tf.int32)], axis=0)
+        #     tiled_input = K.tile(input_tensor, tile_shape)
+        #     tiled_input = tf.add(tiled_input, K.constant(1))
+        #     return tiled_input
+        #
+        # source_normlized_value = Lambda(calculate_average)(source_average)
+
+        def calculate_normlized_value(input_tensor):
+            output_tensor = tf.add(input_tensor, K.constant(0.001))
+            return output_tensor
+
+        source_normlized_value = Lambda(calculate_normlized_value)(source)
+
+        source_sub_target = Lambda(lambda tensor: tensor[0] / tensor[1])([source_sub_target, source_normlized_value])
         source_sub_target_square = Lambda(lambda tensor: tensor**2)(source_sub_target)
         source_sub_target_global_pool = GlobalAveragePooling2D()(source_sub_target_square)
 
         return source_sub_target_global_pool
+
+#     def calculate_domain_shift(tensor, batch_size, name):
+#         # source = Lambda(lambda tensor: tensor[:batch_size, :, :, :])(tensor)
+#         target = Lambda(lambda tensor: tensor[batch_size:, :, :, :])(tensor)
+#         source_GP = GlobalAveragePooling2D()(target)
+
+#         def custom_function(tensor):
+#             tensor_mean = K.mean(tensor)
+#             return tensor_mean
+
+#         source_GP_mean = Lambda(custom_function)(source_GP)
+
+#         return source_GP_mean
 
     ############################################################################
     # Build the network.
